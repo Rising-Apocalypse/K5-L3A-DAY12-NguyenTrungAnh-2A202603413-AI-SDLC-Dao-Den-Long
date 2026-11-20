@@ -139,3 +139,23 @@ Không khoá nào là `null`: game dùng đủ mọi khái niệm của contract
 - **Thưởng bình minh:** `Σ (50 + floor(fuelUnits / 60))` trên các đèn đang sáng, cộng `flames × 50`; chỉ khi `dawn_survived`. Số đèn cần = `ceil(0.6 × 5) = 3`.
 - **Thắp lại không cần "đủ" lại điểm cũ:** đèn tắt đặt `deposited` về 0; đủ `relight_cost` thì sáng đầy 100 và `relit_count` +1.
 
+## Phase 2 hoàn thiện
+
+Đêm 2–3 trong lõi headless (plan 04). Mỗi mục dưới đây là một giả định của kế hoạch (ticket không nói rõ).
+
+- **Điểm xuất phát:** Đêm 2 ở (0,0,0) quay +Z (ticket không nói); Đêm 3 ở (0,0,−30) quay +Z vì (0,0,0) nằm trong tháp chuông. Hồi sinh sau khi rơi về đúng điểm này.
+- **Gió không vào `vel`:** `player.vel` không gồm gió; gió cộng thẳng vào vị trí sau chuyển động của Mây (cả khi lướt), chỉ khi không chờ hồi sinh.
+- **Hướng gió:** `dirDeg = windRng.int(0, 359)` bốc lúc báo trước (tick 1800k − 120); `warning` chỉ dành cho web; snapshot `dir_deg` = 0 khi gió không thổi.
+- **Điểm sương của Gió Lạc:** chính là 12/16 điểm sinh Bóng Mực của đêm (vành sương ngoài rìa); Gió Lạc hiện ở độ cao điểm đó + 1.0 và không cần luật khoảng cách tới Mây.
+- **Gió Lạc bay qua hư không và vách:** nó bám độ cao mặt đất bên dưới (+1.0), qua hư không thì giữ độ cao cũ; vùng an toàn không chặn.
+- **Gió Lạc cướp:** chỉ xét khoảng cách XZ ≤ 1.2, không xét chênh cao; không có sự kiện khi sinh hoặc biến mất; nhặt không bị ảnh hưởng.
+- **Tỏa Sáng và Gió Lạc:** khoảng cách 3D tới tâm xung ≤ `pulse_radius`; không điểm; `pulse.stunned_ids` chỉ liệt kê Bóng Mực. Kẻ cướp bị trúng khi `stolen = 0` thì không làm gì.
+- **Đốm thả trên hư không bị mất:** đốm rơi (do bị đánh hoặc Gió Lạc thả) tại điểm không có mặt đất ở Đêm 2–3 thì mất (các lần bốc luồng `drops` vẫn xảy ra, `dropped` trong sự kiện không đổi); đốm rơi có độ cao bằng mặt đất tại đó.
+- **Bục nhảy:** kích hoạt khi Mây đang đứng đất, cách tâm bục ≤ 1.0 (XZ) và độ cao chân lệch ≤ 0.01; nhấn nhảy cùng tick bị bỏ qua; vận tốc phóng giữ tới khi chạm đất, ngã, hoặc hồi sinh; lướt giữa chừng đặt lại vận tốc đứng về 0 (nhánh lướt chạy như cũ) rồi phóng tiếp.
+- **Va chạm tầng (Đêm 3):** mỗi bước ngang chấp nhận nếu không vào tháp và mặt đất mới ≤ y + 0.35, nếu không thử riêng X, rồi riêng Z, không thì đứng yên; Mây đang đứng đất bám theo dốc trong ±0.35, đi ra khỏi bậc cao hơn 0.35 thì rơi. Khi đang rơi/bay, Mây vào vùng tầng cao hơn tối đa 0.35 dưới mặt thì được đặt lên mặt đó (ngưỡng tiếp đất rộng thêm 0.35 chỉ khi `walls`), để không chui xuyên tầng.
+- **`fall_enabled: false`:** Đêm 1 giữ cắt theo vòng tròn như cũ; Đêm 2–3 huỷ bước ngang sẽ kết thúc trên hư không (trừ lúc đang bị phóng từ bục).
+- **Bóng Mực Đêm 2–3:** mọi dịch chuyển XZ bị huỷ nếu kết thúc trên hư không hoặc trong tháp; bay ở độ cao mặt đất + 1.0; điểm lang thang ngẫu nhiên lấy từ các điểm sinh đom đóm (một lần bốc `shade_ai`) thay vì đĩa của Đêm 1. Bóng Mực kẹt ở mép đảo khi đường thẳng tới đích băng qua hư không (không tìm đường vòng).
+- **Lịch sinh:** Bóng Mực lần đầu ở tick 300 (2 con) mọi Đêm rồi mỗi 420 / 360 tick; Gió Lạc sinh khi `simTick % 1200 === 0` và còn dưới 2 con (con `idle` không tự biến mất nên thường đầy 2 con từ tick 2400).
+- **Luồng ngẫu nhiên mới:** `drifters` (điểm sinh, điểm lượn) và `wind` (hướng); các luồng cũ không bị đổi.
+- **Fixture n2-/n3-:** `scripts/verify.mjs` và helper test chạy fixture có tiền tố `n2-` / `n3-` với `--night 2|3`.
+- **Cạnh số học ở ngưỡng:** ngưỡng `y < −10` của cú rơi tự do nằm đúng ở giá trị −10 (sau 60 tick), nên phép cộng số thực có thể làm cú rơi báo sớm 1 tick (tick 65 thay vì 66); test chấp nhận cả hai.

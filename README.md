@@ -11,7 +11,7 @@ Dự án có thêm **chế độ headless** (không cửa sổ, không GPU) ch�
 theo Test Contract v1.0 (`docs/spec/contract-v1.0.md`).
 
 > Trạng thái: Phase 1 hoàn tất (Đêm 1 chơi được: nhặt đốm sáng, nạp đèn, Bóng Mực, pulse, thắng/thua, tính điểm).
-> Chưa có (phase sau): lướt (dash), tạm dừng, Đêm 2-3, gió, menu/âm thanh.
+> Lõi headless đã có Đêm 1-3, lướt, tạm dừng, gió, Gió Lạc; chưa có trên web (phase sau): menu/âm thanh, chơi Đêm 2-3.
 
 ## Cài đặt & chạy (3 lệnh)
 
@@ -41,12 +41,13 @@ Cần Node.js 20 trở lên (đã thử trên Node 24). Có thể chọn seed: `
 ## Phạm vi Phase 2
 
 Phase 2 triển khai lõi headless của Contract v1.1 cho Đêm 1: lướt (dash), tạm dừng (pause), Bùa Gió (wind charm), sự kiện `night_start`, sự kiện rơi đổi sang `lost`, và định dạng snapshot v1.1.
-Chưa làm (chưa đạt trong phase này): Đêm 2 và Đêm 3 (tiếp tục báo lỗi mã 1), hành vi và mô phỏng Gió Lạc (drifters), gió môi trường, bục nhảy, cầu, tầng, menu/cài đặt/âm thanh/HUD đầy đủ/chế độ hỗ trợ mù màu.
+Hoàn thiện phase 2 (lõi headless): `--night 1|2|3` với ba hòn đảo — Đêm 1 Đảo Bến, Đêm 2 Đảo Cau (hai đảo nối bằng cầu tre, hai bục nhảy), Đêm 3 Đảo Chuông (ba tầng, dốc, bục nhảy, tháp chuông, gió mạnh) — cùng Gió Lạc (drifters), Bóng Mực theo từng Đêm. Chi tiết: `CHANGELOG.md`, `docs/spec/acceptance-phase2.md`.
+Chưa làm (phần web, Plan 05): menu chọn Đêm/giới thiệu/cài đặt/âm thanh/HUD đầy đủ và vẽ Đêm 2–3 (bản web hiện vẫn chỉ chơi Đêm 1). Chế độ bảng màu dễ phân biệt (phím `C`) đã xong từ phase 3.
 
 ## Chế độ headless
 
 ```bash
-node dist/headless.js --seed 1 --night 1 --ticks 600 --out out/a.jsonl \
+node dist/headless.js --seed 1 --night <1|2|3> --ticks 600 --out out/a.jsonl \
   [--scenario kịch-bản.json] [--inputs đầu-vào.json] [--snapshot-every 10]
 ```
 

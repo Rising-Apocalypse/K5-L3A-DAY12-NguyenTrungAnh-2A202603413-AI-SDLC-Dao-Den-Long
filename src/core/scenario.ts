@@ -1,5 +1,5 @@
 import { FormatError } from './errors';
-import type { ShadeStateName, Vec3 } from './types';
+import type { DrifterStateName, ShadeStateName, Vec3 } from './types';
 
 /** A validated scenario file (Test Contract section D and Contract v1.1). Every field is optional: absent = game default. */
 export interface Scenario {
@@ -33,7 +33,7 @@ export interface Scenario {
   }[];
   timeLeftS?: number;
   charms?: { id: string; pos: Vec3; available: boolean; respawnTicks: number }[];
-  drifters?: { pos: Vec3 }[];
+  drifters?: { pos: Vec3; id?: string; state?: DrifterStateName; stolen?: number }[];
   randomDrifters?: boolean;
   windEnabled?: boolean;
 }
@@ -74,6 +74,8 @@ function list(v: unknown, where: string): unknown[] {
 }
 
 const VALID_SHADE_STATES = new Set(['spawning', 'wander', 'chase', 'recoil', 'stunned', 'drain']);
+
+const VALID_DRIFTER_STATES = new Set(['idle', 'chase', 'flee']);
 
 /** Validate a parsed scenario JSON document. Throws FormatError. Unknown keys are ignored. */
 export function parseScenario(json: unknown): Scenario {
@@ -191,9 +193,26 @@ export function parseScenario(json: unknown): Scenario {
   }
 
   if (json.drifters !== undefined) {
+    const seen = new Set<string>();
     out.drifters = list(json.drifters, 'drifters').map((d, i) => {
       if (!isRecord(d)) throw new FormatError(`scenario: drifters[${i}] must be an object`);
-      return { pos: vec3(d.pos, `drifters[${i}].pos`) };
+      const drifter: { pos: Vec3; id?: string; state?: DrifterStateName; stolen?: number } = { pos: vec3(d.pos, `drifters[${i}].pos`) };
+      if (d.id !== undefined) {
+        if (typeof d.id !== 'string' || d.id === '') {
+          throw new FormatError(`scenario: drifters[${i}].id must be a non-empty string`);
+        }
+        if (seen.has(d.id)) throw new FormatError(`scenario: drifters[${i}].id "${d.id}" is used twice`);
+        seen.add(d.id);
+        drifter.id = d.id;
+      }
+      if (d.state !== undefined) {
+        if (typeof d.state !== 'string' || !VALID_DRIFTER_STATES.has(d.state)) {
+          throw new FormatError(`scenario: drifters[${i}].state must be one of idle|chase|flee`);
+        }
+        drifter.state = d.state as DrifterStateName;
+      }
+      if (d.stolen !== undefined) drifter.stolen = count(d.stolen, `drifters[${i}].stolen`);
+      return drifter;
     });
   }
 

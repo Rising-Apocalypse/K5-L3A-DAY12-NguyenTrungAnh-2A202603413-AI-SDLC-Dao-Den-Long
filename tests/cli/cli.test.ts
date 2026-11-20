@@ -250,7 +250,7 @@ describe('error handling', () => {
     expect(headless([...base, '--bogus', '1']).status).toBe(1);
     expect(headless([...base, 'stray']).status).toBe(1);
     expect(headless([...base, '--ticks', '6']).status).toBe(1); // flag twice
-    expect(headless(['--seed', '1', '--night', '2', '--ticks', '5', '--out', join(dir, 'never.jsonl')]).status).toBe(1);
+    expect(headless(['--seed', '1', '--night', '4', '--ticks', '5', '--out', join(dir, 'never.jsonl')]).status).toBe(1);
     expect(headless(['--seed', 'abc', '--night', '1', '--ticks', '5', '--out', join(dir, 'never.jsonl')]).status).toBe(1);
     expect(headless(['--seed', '1.5', '--night', '1', '--ticks', '5', '--out', join(dir, 'never.jsonl')]).status).toBe(1);
     expect(headless(['--seed', '1', '--night', '1', '--ticks', '-1', '--out', join(dir, 'never.jsonl')]).status).toBe(1);

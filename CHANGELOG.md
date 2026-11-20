@@ -1,5 +1,27 @@
 # Changelog
 
+## [phase-2 hoàn thiện] Đêm 2–3 (Contract v1.2 không đổi)
+
+Lõi headless của Ticket-02 phần 2 và 3 (kế hoạch `docs/plans/04-phase2-nights-2-3-core.md`). Phần web (menu, HUD, âm thanh, vẽ Đêm 2–3) thuộc Plan 05. Đêm 1 không đổi một byte (`tests/guards/night1-golden.test.ts`).
+
+### Thêm
+- Module `src/core/levels.ts`: dữ liệu và hàm thuần cho từng Đêm (`getLevel(night)`); các cờ `shadesAvoidVoid`, `terrainY`, `walls` đều tắt ở Đêm 1 để giữ đầu ra cũ.
+- `--night 1|2|3` (các giá trị khác vẫn báo lỗi mã 1); `createGame({ night })`; `night_start` mang số Đêm; thời lượng 240 / 270 / 300 s; hồi sinh về `level.playerStart`.
+- Đêm 2 Đảo Cau: hai đảo bán kính 28 nối bằng cầu tre, 6 đèn, 24 điểm sinh đom đóm, Bùa Gió C1, hai bục nhảy (vy 14, ngang 24 m/s về đảo kia; phím di chuyển không ghi đè, vẫn lướt được).
+- Đêm 3 Đảo Chuông: ba tầng (0 / 3 / 6), hai dốc 30° và 150°, vách tầng (bước lên tối đa 0.35 m mỗi tick, đi ra mép thì rơi), tháp chuông bán kính 2 chặn Mây, bục nhảy (0,3,13), 7 đèn, 30 điểm sinh đom đóm, Bùa Gió C1 C2, điểm xuất phát (0,0,−30).
+- Gió (Đêm 3): báo trước 120 tick, cơn gió 300 tick mỗi 1800 tick, đẩy 2 m/s, hướng từ luồng ngẫu nhiên `wind`; snapshot `wind {active, dir_deg}`.
+- Gió Lạc (drifters): sinh tại tick 1200, 2400, … (tối đa 2, luồng `drifters`), `idle` → `chase` → `flee` → biến mất; cướp tối đa 3 đom đóm (bất tử không ngăn), sự kiện `drifter_steal` và `drifter_drop`; Tỏa Sáng làm kẻ đuổi bỏ chạy, kẻ cướp thả đồ; snapshot `drifters` theo id tăng dần.
+- Bóng Mực theo Đêm: sinh mỗi 480 / 420 / 360 tick, tối đa 6 / 8 / 10, tốc độ 4.0 / 4.0 / 4.5; ở Đêm 2–3 không bao giờ đứng trên hư không hoặc trong tháp, bay sát mặt đất, lang thang về điểm sinh đom đóm.
+- Scenario: `drifters[]` nhận thêm `id`, `state` (`idle|chase|flee`), `stolen`; id đèn tới L6/L7 tuỳ Đêm.
+- Bài test mới: `tests/cli/nights.test.ts` (24 test), `tests/unit/levels.test.ts`, `tests/unit/scenario-drifters.test.ts`, 16 fixture `tests/scenarios/n2-*` và `n3-*` (verify chạy với `--night 2|3` theo tiền tố tên).
+- `scripts/verify.mjs`: thêm các dòng Đêm 2–3 / bục nhảy / tầng / gió / Gió Lạc / Đêm 1 không đổi vào bảng proof phase-2, và dòng hiệu năng `--night 3 --ticks 21600` (≤ 30 s).
+- Tài liệu: `docs/spec/acceptance-phase2.md`, mục "Phase 2 hoàn thiện" trong `docs/notes/assumptions.md`.
+
+### Tests updated (phase-2 hoàn thiện)
+- `tests/cli/cli.test.ts` — `exit 1 (not 0, not 2): missing required flags, unknown flag, bad values`: dòng `--night 2` bị từ chối đổi thành `--night 4` (Đêm 2 và 3 nay hợp lệ; chỉ 0, 4, `abc`… bị từ chối); plan 04 §0.2.
+- `tests/helpers/cli.ts` (helper, không phải test): thêm tuỳ chọn `night` (mặc định theo tiền tố fixture `n2-`/`n3-`) và hàm `cli()`.
+- Không test nào khác bị sửa, xoá, `.skip` hay `.todo`; `tests/golden/` và `tests/guards/night1-golden.test.ts` không đổi.
+
 ## [phase-3] Contract v1.2 "Đèn cạn dầu" (Đêm 1)
 
 ### Thêm
@@ -65,10 +87,8 @@
 - Cấu trúc snapshot: bổ sung các trường `night`, `wind`, `drifters`, `charms`, cập nhật `player` và `motes[].kind`, `motes[].ttl_s`.
 
 ### Chưa làm (chưa đạt)
-- Đêm 2 và Đêm 3 (vẫn báo lỗi mã 1).
-- Gió Lạc (drifters) hành vi và mô phỏng.
-- Gió môi trường và bục nhảy (bounce pads), cầu (bridges), tầng (tiers).
-- Menu, màn hình giới thiệu, cài đặt, âm thanh, HUD đầy đủ, chế độ hỗ trợ mù màu.
+- Menu, màn hình giới thiệu, cài đặt, âm thanh, HUD đầy đủ (phần web, Plan 05).
+- (Đã làm sau đó ở mục "phase-2 hoàn thiện": Đêm 2 và 3, Gió Lạc, gió, bục nhảy, cầu, tầng.)
 
 ### Tests updated
 - `tests/unit/tuning.test.ts`: cập nhật kiểm tra `contract_version` từ `'1.0'` thành `'1.1'`.

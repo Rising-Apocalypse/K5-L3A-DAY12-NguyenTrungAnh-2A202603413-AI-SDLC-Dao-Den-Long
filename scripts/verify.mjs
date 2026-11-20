@@ -58,9 +58,11 @@ for (const name of scenarioNames) {
   if (existsSync(join(dir, 'scenario.json'))) extra.push('--scenario', join(dir, 'scenario.json'));
   if (existsSync(join(dir, 'inputs.json'))) extra.push('--inputs', join(dir, 'inputs.json'));
 
+  // Fixtures named n2-* / n3-* are Night 2 / Night 3 scenarios; every other fixture is Night 1.
+  const night = name.startsWith('n2-') ? '2' : name.startsWith('n3-') ? '3' : '1';
   const outs = [1, 2].map((n) => join(OUT_DIR, `${name}.${n}.jsonl`));
   for (const out of outs) {
-    sh(process.execPath, ['dist/headless.js', '--seed', SEED, '--night', '1', '--ticks', TICKS, ...extra, '--out', out]);
+    sh(process.execPath, ['dist/headless.js', '--seed', SEED, '--night', night, '--ticks', TICKS, ...extra, '--out', out]);
   }
   const [a, b] = outs.map((p) => readFileSync(p));
   const lines = a.toString('utf8').trimEnd().split('\n');
@@ -101,7 +103,7 @@ const md = [
   `- Tests: ${tests.numPassedTests}/${tests.numTotalTests} passed in ${tests.testResults.length} files` +
     ` (${tests.numFailedTests} failed, ${tests.numPendingTests} skipped)`,
   '',
-  `Scenario runs: \`--seed ${SEED} --night 1 --ticks ${TICKS}\`, each executed twice and compared byte for byte.`,
+  `Scenario runs: \`--seed ${SEED} --night 1|2|3 --ticks ${TICKS}\` (Night 2 / 3 for fixtures named n2-* / n3-*), each executed twice and compared byte for byte.`,
   '',
   '| scenario | lines | end line | deterministic |',
   '|---|---|---|---|',
@@ -179,6 +181,24 @@ const PHASE2_REQUIREMENTS = [
   { id: 'Regression Phase 1', text: 'Regression Phase 1: existing Phase 1 gameplay rules continue to work under Contract v1.1',
     tests: [/gameplay\.test\.ts :: (pickup|deposit|pulse|shades|safe zones|falling|scheduled spawns|determinism)/],
     scenarios: ['pickup-basic', 'deposit-light', 'pulse-stun', 'shade-chase', 'safe-zone-block', 'fall-respawn', 'determinism'] },
+  // Ticket-02 completion (plan 04): Nights 2-3. n2-* / n3-* fixtures run with --night 2 / 3.
+  { id: 'Nights 2-3', text: 'Night selection: --night 1|2|3 (else exit 1), per-night map, lanterns, motes, charms, start, duration, levels module',
+    tests: [/nights\.test\.ts :: nights 2-3: selection/, /levels\.test\.ts :: /], scenarios: ['n2-bridge', 'n3-wall'] },
+  { id: 'Night 2 map + pads', text: 'Night 2 Đảo Cau: two islands, bridge, void falls, two jump pads (launch ignores input)',
+    tests: [/nights\.test\.ts :: nights 2-3: terrain .* > n2-(bridge|void|pad)/], scenarios: ['n2-bridge', 'n2-void', 'n2-pad'] },
+  { id: 'Night 3 tiers', text: 'Night 3 Đảo Chuông: tier walls, ramps, ledges, jump pad to tier 2, bell tower blocks',
+    tests: [/nights\.test\.ts :: nights 2-3: terrain .* > n3-(wall|ramp|ledge|pad|tower)/], scenarios: ['n3-wall', 'n3-ramp', 'n3-ledge', 'n3-pad', 'n3-tower'] },
+  { id: 'Wind', text: 'Night 3 wind: announce 120 ticks before, 300-tick gust every 1800, 2 m/s push; off on Nights 1-2 and with wind_enabled false',
+    tests: [/nights\.test\.ts :: nights 2-3: wind/], scenarios: ['n3-wind'] },
+  { id: 'Drifters', text: 'Drifters (Gió Lạc): spawn every 1200 (max 2), chase a loaded Mây, steal up to 3, flee 240; pulse makes chasers flee and thieves drop',
+    tests: [/nights\.test\.ts :: nights 2-3: drifters/, /scenario-drifters\.test\.ts :: /],
+    scenarios: ['n2-drifter-steal', 'n2-drifter-invuln', 'n2-drifter-pulse-chase', 'n2-drifter-pulse-drop'] },
+  { id: 'Night shades', text: 'Per-night shades: speed 4.0 / 4.5, spawn every 420 / 360 (max 8 / 10), never over void',
+    tests: [/nights\.test\.ts :: nights 2-3: shades/], scenarios: ['n2-shade-speed', 'n3-shade-speed', 'n2-shade-void'] },
+  { id: 'Nights 2-3 determinism', text: 'Full Night 2 (16200 ticks) and Night 3 (18000 ticks) runs are byte-identical and take < 30 s',
+    tests: [/nights\.test\.ts :: nights 2-3: determinism/], scenarios: [] },
+  { id: 'Night 1 unchanged', text: 'Night 1 headless output is byte-identical to the golden runs recorded before Nights 2-3',
+    tests: [/night1-golden\.test\.ts :: /], scenarios: [] },
 ];
 
 const P3 = 'gameplay\\.test\\.ts :: phase 3 \\(v1\\.2\\) > ';
@@ -263,6 +283,23 @@ function renderPhaseProof(title, requirements) {
 
 const p1 = renderPhaseProof('Phase 1 proof: requirements to evidence', REQUIREMENTS);
 const p2 = renderPhaseProof('Phase 2 proof: requirements to evidence', PHASE2_REQUIREMENTS);
+
+// Performance row (plan 04): the longest night run must stay within 30 s.
+const PERF_LIMIT_MS = 30000;
+const perfOut = join(OUT_DIR, 'perf-n3.jsonl');
+const perfStart = performance.now();
+sh(process.execPath, ['dist/headless.js', '--seed', '5', '--night', '3', '--ticks', '21600', '--out', perfOut]);
+const perfMs = Math.round(performance.now() - perfStart);
+const perfOk = perfMs <= PERF_LIMIT_MS;
+p2.md += [
+  '## Performance',
+  '',
+  '| run | time | limit | result |',
+  '|---|---|---|---|',
+  `| \`--seed 5 --night 3 --ticks 21600\` | ${perfMs} ms | ${PERF_LIMIT_MS} ms | ${perfOk ? 'PASS' : 'FAIL'} |`,
+  '',
+].join('\n');
+p2.ok = p2.ok && perfOk;
 const p3 = renderPhaseProof('Phase 3 proof: requirements to evidence', PHASE3_REQUIREMENTS);
 
 mkdirSync('docs/proof', { recursive: true });

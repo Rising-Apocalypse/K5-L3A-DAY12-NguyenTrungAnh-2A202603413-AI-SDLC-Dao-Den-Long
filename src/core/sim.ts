@@ -1,18 +1,8 @@
 import { FormatError } from './errors';
 import { compareIds, dist3, moveToward, unitXZ, xzDist } from './geom';
 import { risingEdges, worldMove } from './input';
-import {
-  GRAVITY,
-  ISLAND_RADIUS,
-  JUMP_SPEED,
-  MOTE_SPAWN_POINTS,
-  PLAYER_START,
-  PLAYER_START_FACING,
-  SHADE_HOVER_Y,
-  SHADE_SPAWN_POINTS,
-  buildLanterns,
-  buildMotes,
-} from './level';
+import { GRAVITY, ISLAND_RADIUS, JUMP_SPEED, SHADE_HOVER_Y, buildLanterns, buildMotes } from './level';
+import { getLevel, type Level } from './levels';
 import { Rng } from './rng';
 import { round3 } from './round';
 import {
@@ -24,6 +14,18 @@ import {
   DRAIN_BREAK_DIST,
   DRAIN_REACH,
   DRAIN_STUN_BONUS,
+  DRIFTER_CHASE_CARRIED,
+  DRIFTER_DETECT,
+  DRIFTER_DROP_VANISH_TICKS,
+  DRIFTER_FLEE_TICKS,
+  DRIFTER_HIT_RADIUS,
+  DRIFTER_HOVER_Y,
+  DRIFTER_IDLE_REPICK_TICKS,
+  DRIFTER_IDLE_SPEED,
+  DRIFTER_MAX,
+  DRIFTER_SPAWN_EVERY,
+  DRIFTER_SPEED,
+  DRIFTER_STEAL_MAX,
   DROP_RING_MAX,
   DROP_RING_MIN,
   DROP_TTL,
@@ -34,6 +36,8 @@ import {
   MOTE_CAP,
   MOTE_SPAWN_CLEARANCE,
   MOTE_SPAWN_EVERY,
+  PAD_FOOT_EPS,
+  PAD_RADIUS,
   PICKUP_MAX_DY,
   PULSE_CENTER_DY,
   PULSE_PUSH_TICKS,
@@ -46,19 +50,25 @@ import {
   SHADE_FIRST_SPAWN_COUNT,
   SHADE_HIT_MAX_DY,
   SHADE_LOSE,
-  SHADE_MAX,
   SHADE_SPAWNING_TICKS,
-  SHADE_SPAWN_EVERY,
   SHADE_SPAWN_MIN_DIST,
   SHADE_WANDER_RADIUS,
   SHADE_WANDER_REACHED,
   SHADE_WANDER_REPICK_TICKS,
   SHADE_WANDER_SPEED,
+  STEP_DOWN,
+  STEP_UP,
+  WIND_EVERY,
+  WIND_SPEED,
+  WIND_TICKS,
+  WIND_WARN_TICKS,
 } from './rules';
 import type { Scenario } from './scenario';
 import { TUNING, type Tuning } from './tuning';
 import type {
   Buttons,
+  DrifterState,
+  DrifterStateName,
   Extra,
   GameEvent,
   GameState,
@@ -78,6 +88,8 @@ const toTicks = (seconds: number): number => Math.round(seconds * TICK_RATE);
 
 export interface CreateGameOptions {
   seed: number;
+  /** Which night to play (default 1). */
+  night?: 1 | 2 | 3;
   scenario?: Scenario;
   tuning?: Tuning;
   /** Web only. The headless CLI never passes extras. */
@@ -188,21 +200,50 @@ function assignShades(listed: NonNullable<Scenario['shades']>, playerPos: Vec3):
   });
 }
 
+function newDrifter(id: string, pos: Vec3, state: DrifterStateName, stolen: number): DrifterState {
+  return {
+    id,
+    pos,
+    state,
+    stolen,
+    fleeTicks: state === 'flee' ? DRIFTER_FLEE_TICKS : 0,
+    idleTarget: null,
+    idleTicks: 0,
+  };
+}
+
+/** Listed drifters keep their `id`; the rest get the lowest unused D<n>, in listed order. */
+function assignDrifters(listed: NonNullable<Scenario['drifters']>): DrifterState[] {
+  const used = new Set(listed.flatMap((d) => (d.id !== undefined ? [d.id] : [])));
+  let n = 1;
+  return listed.map((d) => {
+    let id = d.id;
+    if (id === undefined) {
+      while (used.has(`D${n}`)) n++;
+      id = `D${n}`;
+      used.add(id);
+    }
+    return newDrifter(id, copy(d.pos), d.state ?? 'idle', d.stolen ?? 0);
+  });
+}
+
+const NIGHT_DURATION_KEYS = ['night1_duration_s', 'night2_duration_s', 'night3_duration_s'] as const;
+
 /** Default level for the seed, then the scenario applied on top. Emits no events and awards no points. */
-function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState {
-  const lanterns = buildLanterns();
+function buildState(seed: number, scenario: Scenario, tuning: Tuning, level: Level): GameState {
+  const lanterns = buildLanterns(level);
   const units = fuelUnitsOf(tuning);
-  if (lanterns.length !== tuning.lantern_count_night1) {
+  if (level.night === 1 && lanterns.length !== tuning.lantern_count_night1) {
     throw new Error(`level has ${lanterns.length} lanterns but tuning.lantern_count_night1 is ${tuning.lantern_count_night1}`);
   }
-  let motes = scenario.randomMotes === false ? [] : buildMotes(seed);
+  let motes = scenario.randomMotes === false ? [] : buildMotes(seed, level);
   // The standard Night 1 map starts with no shades: they spawn on a schedule (stageSpawns).
   let shades: ShadeState[] = [];
 
   if (scenario.motes) {
     motes = scenario.motes.map((pos, i) => ({ id: `M${i + 1}`, pos: copy(pos), active: true, kind: 'random' }));
   }
-  const pos = copy(scenario.player?.pos ?? PLAYER_START);
+  const pos = copy(scenario.player?.pos ?? level.playerStart);
   if (scenario.shades) shades = assignShades(scenario.shades, pos);
 
   for (const patch of scenario.lanterns ?? []) {
@@ -221,6 +262,7 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState
       throw new FormatError(`scenario: shade "${shade.id}" has unknown target_lantern_id "${shade.targetLanternId}"`);
     }
   }
+  const drifters = assignDrifters(scenario.drifters ?? []);
   // Lanterns lit by the scenario are lit from tick 0: shades standing inside them are evicted from step 0.
   for (const lantern of lanterns) {
     if (hasSafeZone(lantern, tuning)) for (const shade of shades) evictIfInside(shade, lantern, tuning);
@@ -229,18 +271,18 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState
   return {
     tick: 0,
     simTick: 0,
-    night: 1,
+    night: level.night,
     paused: false,
     state: 'playing',
-    timeLeftS: scenario.timeLeftS ?? tuning.night1_duration_s,
+    timeLeftS: scenario.timeLeftS ?? tuning[NIGHT_DURATION_KEYS[level.night - 1]!],
     score: 0,
     player: {
       pos,
       vel: [0, 0, 0],
-      facing: [PLAYER_START_FACING[0], PLAYER_START_FACING[1]],
+      facing: [level.playerFacing[0], level.playerFacing[1]],
       flames: scenario.player?.flames ?? tuning.flames,
       carried: scenario.player?.carried ?? 0,
-      grounded: pos[1] <= 0 && isOverIsland(pos),
+      grounded: standsOnGround(level, pos),
       invulnTicks: scenario.player?.invulnTicks ?? 0,
       pulseCooldownTicks: scenario.player?.pulseCdTicks ?? 0,
       fallWaitTicks: 0,
@@ -249,25 +291,30 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState
       dashDir: [0, 1],
       charmTicks: scenario.player?.charmTicks ?? 0,
       successfulLights: scenario.player?.successfulLights ?? 0,
+      launch: null,
     },
     lanterns,
     shades,
     motes,
-    charms: (scenario.charms ?? []).map((c) => ({
+    charms: (scenario.charms ?? level.charmPositions.map((pos, i) => ({ id: `C${i + 1}`, pos, available: true, respawnTicks: 0 }))).map((c) => ({
       id: c.id,
       pos: copy(c.pos),
       available: c.available,
       respawnTicks: c.available ? 0 : c.respawnTicks,
     })),
+    drifters,
+    wind: { active: false, dirDeg: 0, warning: false },
     prevButtons: { jump: false, interact: false, pulse: false, dash: false, pause: false },
     nextShadeNum: Math.max(0, ...shades.map((s) => idNumber(s.id, 'S'))) + 1,
     nextMoteNum: Math.max(0, ...motes.map((m) => idNumber(m.id, 'M'))) + 1,
+    nextDrifterNum: Math.max(0, ...drifters.map((d) => idNumber(d.id, 'D'))) + 1,
   };
 }
 
-/** The ground exists only while the XZ position is within ISLAND_RADIUS of the centre. */
-function isOverIsland(pos: Vec3): boolean {
-  return Math.hypot(pos[0], pos[2]) <= ISLAND_RADIUS;
+/** Feet at or below the ground surface under them (Night 1: y <= 0 and within ISLAND_RADIUS of the centre). */
+function standsOnGround(level: Level, pos: Vec3): boolean {
+  const h = level.groundAt(pos[0], pos[2]);
+  return h !== null && pos[1] <= h;
 }
 
 // --- one tick: stages 1-11 of docs/plans/01-phase1-gameplay.md ----------------------------------------------
@@ -276,14 +323,17 @@ function isOverIsland(pos: Vec3): boolean {
 interface Step {
   readonly state: GameState;
   readonly tuning: Tuning;
+  readonly level: Level;
   readonly input: InputState;
   /** Rising edges of the buttons this tick (stage 1). */
   readonly edges: Buttons;
   readonly events: GameEvent[];
   readonly ticks: { readonly invuln: number; readonly stun: number; readonly pulseCooldown: number };
-  readonly rngs: { readonly drops: Rng; readonly shadeAi: Rng; readonly spawn: Rng; readonly shades: Rng };
+  readonly rngs: { readonly drops: Rng; readonly shadeAi: Rng; readonly spawn: Rng; readonly shades: Rng; readonly drifters: Rng; readonly wind: Rng };
   readonly randomMotes: boolean;
   readonly randomShades: boolean;
+  readonly randomDrifters: boolean;
+  readonly windEnabled: boolean;
   readonly fuel: FuelUnits;
   /** Set by stage 2 when the fall-wait ends this tick; stage 3 then respawns Mây instead of moving her. */
   respawn: boolean;
@@ -336,6 +386,17 @@ function stageCounters(c: Step): void {
       }
     }
   }
+  if (c.level.wind && c.windEnabled) stageWind(c);
+}
+
+/** Night 3 wind: gust k is announced at simTick WIND_EVERY*k - WIND_WARN_TICKS and blows for WIND_TICKS ticks from WIND_EVERY*k. */
+function stageWind(c: Step): void {
+  const w = c.state.wind;
+  const t = c.state.simTick;
+  const m = t % WIND_EVERY;
+  if (m === WIND_EVERY - WIND_WARN_TICKS) w.dirDeg = c.rngs.wind.int(0, 359);
+  w.warning = m >= WIND_EVERY - WIND_WARN_TICKS;
+  w.active = t >= WIND_EVERY && m < WIND_TICKS;
 }
 
 /** Rule 3, right after stage 2: a lit lantern out of fuel goes out and forgets its deposit. */
@@ -350,24 +411,112 @@ function stageLanternsOut(c: Step): void {
   }
 }
 
+/**
+ * Walls (Night 3): move Mây to (tx, tz) unless that is blocked (bell tower) or a step up higher than STEP_UP;
+ * then try X only, then Z only, else stay.
+ */
+function wallMove(c: Step, tx: number, tz: number): void {
+  const { level } = c;
+  const p = c.state.player;
+  const [fx, fz] = [p.pos[0], p.pos[2]];
+  const y = p.pos[1];
+  const ok = (x: number, z: number): boolean => {
+    if (level.blocked(x, z, y)) return false;
+    const g = level.groundAt(x, z);
+    return g === null || g <= y + STEP_UP;
+  };
+  if (ok(tx, tz)) {
+    p.pos[0] = tx;
+    p.pos[2] = tz;
+  } else if (ok(tx, fz)) {
+    p.pos[0] = tx;
+  } else if (ok(fx, tz)) {
+    p.pos[2] = tz;
+  }
+}
+
+/** One horizontal displacement of Mây (run, dash, launch or wind). Night 1: plain addition, exactly as always. */
+function displace(c: Step, dx: number, dz: number): void {
+  const p = c.state.player;
+  if (!c.tuning.fall_enabled && c.level.night !== 1 && p.launch === null) {
+    // Nights 2-3 without a fall penalty: a move that would end over void is undone (Night 1 clamps to its circle).
+    if (c.level.groundAt(p.pos[0] + dx, p.pos[2] + dz) === null) return;
+  }
+  if (c.level.walls) {
+    wallMove(c, p.pos[0] + dx, p.pos[2] + dz);
+  } else {
+    p.pos[0] += dx;
+    p.pos[2] += dz;
+  }
+}
+
+/** Wind: while a gust blows (and Mây is not waiting to respawn) it pushes her WIND_SPEED m/s on top of her own move. */
+function applyWind(c: Step): void {
+  const { wind } = c.state;
+  if (!wind.active || c.state.player.fallWaitTicks > 0) return;
+  const a = (wind.dirDeg * Math.PI) / 180;
+  displace(c, (Math.cos(a) * WIND_SPEED) / TICK_RATE, (Math.sin(a) * WIND_SPEED) / TICK_RATE);
+}
+
+/** Walls (Night 3): a grounded Mây follows ramps (snaps within STEP_DOWN / STEP_UP) and walks off ledges. */
+function settleOnGround(c: Step): void {
+  const p = c.state.player;
+  if (!p.grounded) return;
+  const h = c.level.groundAt(p.pos[0], p.pos[2]);
+  if (h === null) {
+    p.grounded = false;
+  } else if (h >= p.pos[1] - STEP_DOWN && h <= p.pos[1] + STEP_UP) {
+    p.pos[1] = h;
+  } else if (h < p.pos[1] - STEP_DOWN) {
+    p.grounded = false; // off a ledge: falls to the lower tier
+  }
+}
+
+/** The fall penalty (once per fall; Mây is frozen afterwards), shared by the dash and the normal branch. */
+function applyFall(c: Step): void {
+  const p = c.state.player;
+  // Regardless of invulnerability: lose a flame and everything carried. In v1.1 the event's `lost` reports the
+  // motes lost, dropped is 0.
+  p.flames = Math.max(0, p.flames - 1);
+  const lost = p.carried;
+  p.carried = 0;
+  p.dashTicks = 0;
+  p.launch = null;
+  c.events.push({ name: 'player_hit', data: { by: 'fall', flames: p.flames, dropped: 0, lost } });
+  if (p.flames > 0) p.fallWaitTicks = FALL_WAIT_TICKS; // with no flame left the game ends in stage 11
+}
+
 /** Stage 3: walk / jump / gravity, then the fall check. Mây is frozen while she waits to respawn. */
 function stageMovePlayer(c: Step): void {
-  const { state, tuning, input } = c;
+  const { state, tuning, input, level } = c;
   const p = state.player;
   if (p.fallWaitTicks > 0) return;
   if (c.respawn) {
     // Back at the start, standing still, invulnerable for a moment (no movement on the respawn tick itself).
-    p.pos[0] = PLAYER_START[0];
-    p.pos[1] = PLAYER_START[1];
-    p.pos[2] = PLAYER_START[2];
+    p.pos[0] = level.playerStart[0];
+    p.pos[1] = level.playerStart[1];
+    p.pos[2] = level.playerStart[2];
     p.vel = [0, 0, 0];
     p.grounded = true;
+    p.launch = null;
     p.invulnTicks = c.ticks.invuln;
     return;
   }
 
   const [dx, dz] = worldMove(input.move, input.camYawDeg);
   const moveLen = Math.hypot(dx, dz);
+
+  // Jump pads: a grounded Mây standing on one (feet at its height) is launched; a jump press on that tick is moot.
+  if (p.grounded && level.jumpPads.length > 0) {
+    const pad = level.jumpPads.find(
+      (pd) => xzDist(p.pos, pd.center) <= PAD_RADIUS && Math.abs(p.pos[1] - pd.center[1]) <= PAD_FOOT_EPS,
+    );
+    if (pad) {
+      p.launch = [pad.vxz[0], pad.vxz[1]];
+      p.vel[1] = pad.vy;
+      p.grounded = false;
+    }
+  }
 
   const canDash = p.charmTicks > 0 || p.dashCooldownTicks === 0;
   if (c.edges.dash && p.dashTicks === 0 && canDash) {
@@ -380,33 +529,33 @@ function stageMovePlayer(c: Step): void {
 
   if (p.dashTicks > 0) {
     p.vel = [p.dashDir[0] * tuning.dash_speed, 0, p.dashDir[1] * tuning.dash_speed];
-    p.pos[0] += p.vel[0] * DT;
-    p.pos[2] += p.vel[2] * DT;
+    displace(c, p.vel[0] * DT, p.vel[2] * DT);
     p.dashTicks -= 1;
+    applyWind(c);
 
-    if (p.grounded && !isOverIsland(p.pos)) p.grounded = false;
+    if (level.walls) settleOnGround(c);
+    else if (p.grounded && level.groundAt(p.pos[0], p.pos[2]) === null) p.grounded = false;
 
-    if (tuning.fall_enabled && p.pos[1] < FALL_Y) {
-      p.flames = Math.max(0, p.flames - 1);
-      const lost = p.carried;
-      p.carried = 0;
-      p.dashTicks = 0;
-      c.events.push({ name: 'player_hit', data: { by: 'fall', flames: p.flames, dropped: 0, lost } });
-      if (p.flames > 0) p.fallWaitTicks = FALL_WAIT_TICKS;
-    }
+    if (tuning.fall_enabled && p.pos[1] < FALL_Y) applyFall(c);
     return;
   }
 
-  // Velocity is set instantly (full air control). There is no edge clamp: past ISLAND_RADIUS there is no
-  // ground and the player simply keeps falling (unless falling is switched off, see below).
+  // Velocity is set instantly (full air control). There is no edge clamp: past the ground there is nothing
+  // and the player simply keeps falling (unless falling is switched off, see below). During a pad launch the
+  // horizontal velocity is the launch velocity: move input is ignored and the facing does not change.
   const speed = p.charmTicks > 0 ? CHARM_RUN_SPEED : tuning.player_speed;
-  p.vel[0] = dx * speed;
-  p.vel[2] = dz * speed;
-  p.pos[0] += p.vel[0] * DT;
-  p.pos[2] += p.vel[2] * DT;
-  if (moveLen > 0) p.facing = [dx / moveLen, dz / moveLen];
+  if (p.launch) {
+    p.vel[0] = p.launch[0];
+    p.vel[2] = p.launch[1];
+  } else {
+    p.vel[0] = dx * speed;
+    p.vel[2] = dz * speed;
+  }
+  displace(c, p.vel[0] * DT, p.vel[2] * DT);
+  if (moveLen > 0 && !p.launch) p.facing = [dx / moveLen, dz / moveLen];
+  applyWind(c);
 
-  if (!tuning.fall_enabled) {
+  if (!tuning.fall_enabled && level.night === 1) {
     // Without a fall penalty the island edge is a wall.
     const r = Math.hypot(p.pos[0], p.pos[2]);
     if (r > ISLAND_RADIUS) {
@@ -415,35 +564,31 @@ function stageMovePlayer(c: Step): void {
     }
   }
 
+  if (level.walls) settleOnGround(c);
+
   if (c.edges.jump && p.grounded) {
     p.vel[1] = JUMP_SPEED;
     p.grounded = false;
   }
 
-  const overIsland = isOverIsland(p.pos);
-  if (p.grounded && !overIsland) p.grounded = false; // walked off the edge
+  const h = level.groundAt(p.pos[0], p.pos[2]);
+  if (p.grounded && h === null) p.grounded = false; // walked off the edge
   if (!p.grounded) {
     // Exact integration for constant gravity (so the jump apex is exactly JUMP_SPEED^2 / (2 * GRAVITY)).
     const prevY = p.pos[1];
     p.pos[1] += p.vel[1] * DT - 0.5 * GRAVITY * DT * DT;
     p.vel[1] -= GRAVITY * DT;
-    if (overIsland && prevY >= 0 && p.pos[1] <= 0) {
-      p.pos[1] = 0;
+    // With walls, Mây may have entered a higher tier up to STEP_UP below its surface: she lands on it.
+    const reach = level.walls ? STEP_UP : 0;
+    if (h !== null && prevY >= h - reach && p.pos[1] <= h) {
+      p.pos[1] = h;
       p.vel[1] = 0;
       p.grounded = true;
+      p.launch = null;
     }
   }
 
-  if (tuning.fall_enabled && p.pos[1] < FALL_Y) {
-    // Once per fall (Mây is frozen afterwards) and regardless of invulnerability: lose a flame and everything
-    // carried. In v1.1 the event's `lost` reports the motes lost, dropped is 0.
-    p.flames = Math.max(0, p.flames - 1);
-    const lost = p.carried;
-    p.carried = 0;
-    p.dashTicks = 0;
-    c.events.push({ name: 'player_hit', data: { by: 'fall', flames: p.flames, dropped: 0, lost } });
-    if (p.flames > 0) p.fallWaitTicks = FALL_WAIT_TICKS; // with no flame left the game ends in stage 11
-  }
+  if (tuning.fall_enabled && p.pos[1] < FALL_Y) applyFall(c);
 }
 
 /** Stage 4: pick up motes in reach, lowest id first, while there is room to carry them. */
@@ -568,10 +713,60 @@ function stagePulse(c: Step): void {
     state.score += tuning.score.per_stun + (wasDraining ? DRAIN_STUN_BONUS : 0);
   }
   c.events.push({ name: 'pulse', data: { stunned_ids: targets.map((s) => s.id) } });
+
+  // Drifters in reach (chase or flee, lowest id first): a chaser gives up and flees empty-handed; a fleeing thief
+  // drops its loot. No score; the event above lists shades only.
+  const drifterTargets = [...state.drifters]
+    .sort((a, b) => compareIds(a.id, b.id))
+    .filter((d) => (d.state === 'chase' || d.state === 'flee') && dist3(centre, d.pos) <= tuning.pulse_radius);
+  for (const d of drifterTargets) {
+    if (d.state === 'chase') {
+      d.state = 'flee';
+      d.fleeTicks = DRIFTER_FLEE_TICKS;
+    } else if (d.stolen > 0) {
+      for (let i = 0; i < d.stolen; i++) dropMote(c, d.pos[0], d.pos[2]);
+      c.events.push({ name: 'drifter_drop', data: { drifter_id: d.id, amount: d.stolen } });
+      d.stolen = 0;
+      d.fleeTicks = Math.min(d.fleeTicks, DRIFTER_DROP_VANISH_TICKS);
+    }
+  }
+}
+
+/**
+ * A dropped mote (kind `dropped`, ttl DROP_TTL) at (x, z). Night 1: always at y 0. Nights 2-3: at the ground height
+ * there; over void it is lost.
+ */
+function dropMote(c: Step, x: number, z: number): void {
+  let y = 0;
+  if (c.level.terrainY) {
+    const g = c.level.groundAt(x, z);
+    if (g === null) return;
+    y = g;
+  }
+  c.state.motes.push({ id: `M${c.state.nextMoteNum++}`, pos: [x, y, z], active: true, ttl: DROP_TTL, kind: 'dropped' });
+}
+
+/**
+ * Run one XZ change of a shade. Nights 2-3 (`shadesAvoidVoid`): if it would end over void or inside the bell tower,
+ * the shade keeps its previous XZ instead. Night 1: just run it.
+ */
+function guarded<T>(c: Step, s: ShadeState, change: () => T): T {
+  if (!c.level.shadesAvoidVoid) return change();
+  const [x, z] = [s.pos[0], s.pos[2]];
+  const result = change();
+  if (c.level.groundAt(s.pos[0], s.pos[2]) === null || c.level.blocked(s.pos[0], s.pos[2], s.pos[1])) {
+    s.pos[0] = x;
+    s.pos[2] = z;
+  }
+  return result;
 }
 
 /** Push `s` out of every lit safe zone (radially, to just beyond the edge). True if it had to be moved. */
 function clampOutsideSafeZones(c: Step, s: ShadeState): boolean {
+  return guarded(c, s, () => clampRaw(c, s));
+}
+
+function clampRaw(c: Step, s: ShadeState): boolean {
   const lit = c.state.lanterns.filter((l) => hasSafeZone(l, c.tuning));
   const edge = c.tuning.safe_radius + SAFE_EDGE_MARGIN;
   let moved = false;
@@ -592,10 +787,12 @@ function clampOutsideSafeZones(c: Step, s: ShadeState): boolean {
 }
 
 /** One forced step (pulse push / recoil), if any is left. */
-function applyForcedStep(s: ShadeState): void {
+function applyForcedStep(c: Step, s: ShadeState): void {
   if (s.forcedTicks <= 0) return;
-  s.pos[0] += s.forcedStep[0];
-  s.pos[2] += s.forcedStep[1];
+  guarded(c, s, () => {
+    s.pos[0] += s.forcedStep[0];
+    s.pos[2] += s.forcedStep[1];
+  });
   s.forcedTicks -= 1;
 }
 
@@ -627,23 +824,35 @@ function wander(c: Step, s: ShadeState): void {
       s.drainTicks = 0;
       return;
     }
-    moveToward(s.pos, lantern.pos, SHADE_WANDER_SPEED / TICK_RATE);
+    guarded(c, s, () => moveToward(s.pos, lantern.pos, SHADE_WANDER_SPEED / TICK_RATE));
     clampOutsideSafeZones(c, s);
     return;
   }
   s.wanderTicks -= 1;
   if (s.wanderTarget === null || s.wanderTicks <= 0 || xzDist(s.pos, s.wanderTarget) <= SHADE_WANDER_REACHED) {
-    const angle = c.rngs.shadeAi.range(0, 2 * Math.PI);
-    const radius = SHADE_WANDER_RADIUS * Math.sqrt(c.rngs.shadeAi.next());
-    s.wanderTarget = [radius * Math.cos(angle), 0, radius * Math.sin(angle)];
+    if (c.level.night === 1) {
+      const angle = c.rngs.shadeAi.range(0, 2 * Math.PI);
+      const radius = SHADE_WANDER_RADIUS * Math.sqrt(c.rngs.shadeAi.next());
+      s.wanderTarget = [radius * Math.cos(angle), 0, radius * Math.sin(angle)];
+    } else {
+      // Nights 2-3: one of the level's mote spawn points (always on ground).
+      const points = c.level.moteSpawnPoints;
+      s.wanderTarget = copy(points[c.rngs.shadeAi.int(0, points.length - 1)]!);
+    }
     s.wanderTicks = SHADE_WANDER_REPICK_TICKS;
   }
-  moveToward(s.pos, s.wanderTarget, SHADE_WANDER_SPEED / TICK_RATE);
+  const target = s.wanderTarget;
+  guarded(c, s, () => moveToward(s.pos, target, SHADE_WANDER_SPEED / TICK_RATE));
   if (clampOutsideSafeZones(c, s)) s.wanderTicks = 0;
 }
 
-/** Stage 8 for one shade. Y never changes: a shade keeps its own height. */
+/** Stage 8 for one shade. Night 1: Y never changes. Nights 2-3 (`terrainY`): the shade hovers over the ground below. */
 function moveShade(c: Step, s: ShadeState): void {
+  moveShadeXZ(c, s);
+  if (c.level.terrainY) s.pos[1] = (c.level.groundAt(s.pos[0], s.pos[2]) ?? s.pos[1] - SHADE_HOVER_Y) + SHADE_HOVER_Y;
+}
+
+function moveShadeXZ(c: Step, s: ShadeState): void {
   const { tuning } = c;
   const p = c.state.player;
 
@@ -653,14 +862,16 @@ function moveShade(c: Step, s: ShadeState): void {
     const [ux, uz] = unitXZ(s.evictFrom, s.pos);
     const remaining = edge - xzDist(s.pos, s.evictFrom);
     s.evictTicks -= 1;
-    if (s.evictTicks === 0 || s.evictStep >= remaining) {
-      s.pos[0] = s.evictFrom[0] + ux * edge;
-      s.pos[2] = s.evictFrom[2] + uz * edge;
-      s.evictTicks = 0;
-    } else {
-      s.pos[0] += ux * s.evictStep;
-      s.pos[2] += uz * s.evictStep;
-    }
+    guarded(c, s, () => {
+      if (s.evictTicks === 0 || s.evictStep >= remaining) {
+        s.pos[0] = s.evictFrom[0] + ux * edge;
+        s.pos[2] = s.evictFrom[2] + uz * edge;
+        s.evictTicks = 0;
+      } else {
+        s.pos[0] += ux * s.evictStep;
+        s.pos[2] += uz * s.evictStep;
+      }
+    });
     return;
   }
 
@@ -670,7 +881,7 @@ function moveShade(c: Step, s: ShadeState): void {
   }
 
   if (s.state === 'stunned') {
-    applyForcedStep(s);
+    applyForcedStep(c, s);
     if (s.stunTicks > 0) {
       clampOutsideSafeZones(c, s);
       return;
@@ -694,7 +905,7 @@ function moveShade(c: Step, s: ShadeState): void {
   }
 
   if (s.state === 'recoil') {
-    applyForcedStep(s);
+    applyForcedStep(c, s);
     if (s.forcedTicks <= 0) s.state = 'wander'; // re-evaluated (chase?) from the next tick
     clampOutsideSafeZones(c, s);
     return;
@@ -712,7 +923,7 @@ function moveShade(c: Step, s: ShadeState): void {
   }
 
   if (s.state === 'chase') {
-    moveToward(s.pos, p.pos, tuning.shade_speed / TICK_RATE);
+    guarded(c, s, () => moveToward(s.pos, p.pos, c.level.shadeSpeed(tuning) / TICK_RATE));
     clampOutsideSafeZones(c, s);
   } else {
     wander(c, s);
@@ -722,12 +933,71 @@ function moveShade(c: Step, s: ShadeState): void {
 /** Stage 8: move every shade (in list order, so the shade_ai stream is drawn in a fixed order). */
 function stageShades(c: Step): void {
   for (const s of c.state.shades) moveShade(c, s);
+  stageDrifters(c);
+}
+
+/** Does this drifter want Mây's motes? She must be there, carry enough and be within detection range. */
+function drifterWantsMay(c: Step, d: DrifterState): boolean {
+  const p = c.state.player;
+  return p.fallWaitTicks === 0 && p.carried >= DRIFTER_CHASE_CARRIED && xzDist(d.pos, p.pos) <= DRIFTER_DETECT;
+}
+
+/** Idle: drift towards a random mote spawn point (re-picked when null, reached or every DRIFTER_IDLE_REPICK_TICKS). */
+function drifterIdleMove(c: Step, d: DrifterState): void {
+  const points = c.level.moteSpawnPoints;
+  d.idleTicks -= 1;
+  if (d.idleTarget === null || d.idleTicks <= 0 || xzDist(d.pos, d.idleTarget) <= SHADE_WANDER_REACHED) {
+    d.idleTarget = copy(points[c.rngs.drifters.int(0, points.length - 1)]!);
+    d.idleTicks = DRIFTER_IDLE_REPICK_TICKS;
+  }
+  moveToward(d.pos, d.idleTarget, DRIFTER_IDLE_SPEED / TICK_RATE);
+}
+
+/** Stage 8, after all shades: drifters in ascending id. They fly over void and walls. */
+function stageDrifters(c: Step): void {
+  const { state, level } = c;
+  const p = state.player;
+  for (const d of [...state.drifters].sort((a, b) => compareIds(a.id, b.id))) {
+    if (d.state === 'idle' && drifterWantsMay(c, d)) d.state = 'chase';
+    else if (d.state === 'chase' && !drifterWantsMay(c, d)) d.state = 'idle';
+
+    if (d.state === 'chase') {
+      moveToward(d.pos, p.pos, DRIFTER_SPEED / TICK_RATE);
+    } else if (d.state === 'idle') {
+      drifterIdleMove(c, d);
+    } else {
+      const [ux, uz] = unitXZ(p.pos, d.pos);
+      d.pos[0] += (ux * DRIFTER_SPEED) / TICK_RATE;
+      d.pos[2] += (uz * DRIFTER_SPEED) / TICK_RATE;
+      d.fleeTicks -= 1;
+      if (d.fleeTicks <= 0) {
+        state.drifters.splice(state.drifters.indexOf(d), 1);
+        continue;
+      }
+    }
+    if (level.terrainY) d.pos[1] = (level.groundAt(d.pos[0], d.pos[2]) ?? d.pos[1] - DRIFTER_HOVER_Y) + DRIFTER_HOVER_Y;
+  }
 }
 
 /** Stage 9: the first eligible shade (lowest id) touching Mây hits her; at most one hit per tick. */
 function stageHits(c: Step): void {
   const { state, tuning } = c;
   const p = state.player;
+
+  // Drifters first (lowest id): a chasing drifter touching Mây steals up to DRIFTER_STEAL_MAX motes and flees.
+  // Invulnerability does not protect; a fall wait does.
+  if (p.fallWaitTicks === 0) {
+    for (const d of [...state.drifters].sort((a, b) => compareIds(a.id, b.id))) {
+      if (d.state !== 'chase' || xzDist(d.pos, p.pos) > DRIFTER_HIT_RADIUS) continue;
+      const amount = Math.min(DRIFTER_STEAL_MAX, p.carried);
+      p.carried -= amount;
+      d.stolen = amount;
+      d.state = 'flee';
+      d.fleeTicks = DRIFTER_FLEE_TICKS;
+      c.events.push({ name: 'drifter_steal', data: { drifter_id: d.id, amount, carried: p.carried } });
+    }
+  }
+
   if (p.invulnTicks > 0 || p.fallWaitTicks > 0) return;
 
   const shade = ascending(state.shades).find(
@@ -745,13 +1015,7 @@ function stageHits(c: Step): void {
   for (let i = 0; i < dropped; i++) {
     const angle = c.rngs.drops.range(0, 2 * Math.PI);
     const radius = c.rngs.drops.range(DROP_RING_MIN, DROP_RING_MAX);
-    state.motes.push({
-      id: `M${state.nextMoteNum++}`,
-      pos: [p.pos[0] + radius * Math.cos(angle), 0, p.pos[2] + radius * Math.sin(angle)],
-      active: true,
-      ttl: DROP_TTL,
-      kind: 'dropped',
-    });
+    dropMote(c, p.pos[0] + radius * Math.cos(angle), p.pos[2] + radius * Math.sin(angle));
   }
   p.invulnTicks = c.ticks.invuln;
 
@@ -767,7 +1031,7 @@ function spawnMote(c: Step): void {
   const { state } = c;
   const active = state.motes.filter((m) => m.active);
   if (active.length >= MOTE_CAP) return;
-  const free = MOTE_SPAWN_POINTS.filter((pt) => !active.some((m) => xzDist(pt, m.pos) <= MOTE_SPAWN_CLEARANCE));
+  const free = c.level.moteSpawnPoints.filter((pt) => !active.some((m) => xzDist(pt, m.pos) <= MOTE_SPAWN_CLEARANCE));
   if (free.length === 0) return;
   const pt = free[c.rngs.spawn.int(0, free.length - 1)]!;
   state.motes.push({ id: `M${state.nextMoteNum++}`, pos: copy(pt), active: true, kind: 'random' });
@@ -778,8 +1042,8 @@ function spawnShades(c: Step, count: number): void {
   const { state } = c;
   const lit = state.lanterns.filter((l) => hasSafeZone(l, c.tuning));
   const used: Vec3[] = [];
-  for (let i = 0; i < count && state.shades.length < SHADE_MAX; i++) {
-    const valid = SHADE_SPAWN_POINTS.filter(
+  for (let i = 0; i < count && state.shades.length < c.level.shadeMax; i++) {
+    const valid = c.level.shadeSpawnPoints.filter(
       (pt) =>
         !used.includes(pt) &&
         xzDist(pt, state.player.pos) >= SHADE_SPAWN_MIN_DIST &&
@@ -789,7 +1053,7 @@ function spawnShades(c: Step, count: number): void {
     const pt = valid[c.rngs.shades.int(0, valid.length - 1)]!;
     used.push(pt);
     const id = `S${state.nextShadeNum++}`;
-    state.shades.push(newShade(id, [pt[0], SHADE_HOVER_Y, pt[2]], 'spawning'));
+    state.shades.push(newShade(id, [pt[0], pt[1] + SHADE_HOVER_Y, pt[2]], 'spawning'));
     c.events.push({ name: 'shade_spawned', data: { id } });
   }
 }
@@ -798,9 +1062,17 @@ function spawnShades(c: Step, count: number): void {
 function stageSpawns(c: Step): void {
   const t = c.state.simTick;
   if (c.randomMotes && t % MOTE_SPAWN_EVERY === 0) spawnMote(c);
+  if (c.level.drifters && c.randomDrifters && t % DRIFTER_SPAWN_EVERY === 0 && c.state.drifters.length < DRIFTER_MAX) spawnDrifter(c);
   if (!c.randomShades) return;
   if (t === SHADE_FIRST_SPAWN) spawnShades(c, SHADE_FIRST_SPAWN_COUNT);
-  else if (t > SHADE_FIRST_SPAWN && (t - SHADE_FIRST_SPAWN) % SHADE_SPAWN_EVERY === 0) spawnShades(c, 1);
+  else if (t > SHADE_FIRST_SPAWN && (t - SHADE_FIRST_SPAWN) % c.level.shadeSpawnEvery === 0) spawnShades(c, 1);
+}
+
+/** Scheduled drifter: idle, on a random misty-rim (shade spawn) point, hovering above it. No event. */
+function spawnDrifter(c: Step): void {
+  const { state, level } = c;
+  const pt = level.shadeSpawnPoints[c.rngs.drifters.int(0, level.shadeSpawnPoints.length - 1)]!;
+  state.drifters.push(newDrifter(`D${state.nextDrifterNum++}`, [pt[0], pt[1] + DRIFTER_HOVER_Y, pt[2]], 'idle', 0));
 }
 
 /** Stage 11: first match wins: no flames, then at dawn survive (enough lit lanterns) or lose. No early win. */
@@ -828,7 +1100,8 @@ export function createGame(options: CreateGameOptions): Game {
   const tuning = options.tuning ?? TUNING;
   const extras = options.extras ?? [];
   const scenario = options.scenario ?? {};
-  const state = buildState(options.seed, scenario, tuning);
+  const level = getLevel(options.night ?? 1);
+  const state = buildState(options.seed, scenario, tuning, level);
   const startTimeS = state.timeLeftS;
   const extrasRng = new Rng(options.seed, 'extras');
   for (const extra of extras) extra.onBuild?.(state, extrasRng);
@@ -839,6 +1112,8 @@ export function createGame(options: CreateGameOptions): Game {
     shadeAi: new Rng(options.seed, 'shade_ai'),
     spawn: new Rng(options.seed, 'spawn'),
     shades: new Rng(options.seed, 'shades'),
+    drifters: new Rng(options.seed, 'drifters'),
+    wind: new Rng(options.seed, 'wind'),
   };
   const fuel = fuelUnitsOf(tuning);
   const ticks = { invuln: toTicks(tuning.invuln_s), stun: toTicks(tuning.pulse_stun_s), pulseCooldown: toTicks(tuning.pulse_cooldown_s) };
@@ -865,6 +1140,7 @@ export function createGame(options: CreateGameOptions): Game {
     const c: Step = {
       state,
       tuning,
+      level,
       input,
       edges,
       events,
@@ -872,6 +1148,8 @@ export function createGame(options: CreateGameOptions): Game {
       rngs,
       randomMotes: scenario.randomMotes !== false,
       randomShades: scenario.randomShades !== false,
+      randomDrifters: scenario.randomDrifters !== false,
+      windEnabled: scenario.windEnabled !== false,
       fuel,
       respawn: false,
       newlyLit: [],
@@ -904,7 +1182,7 @@ export function createGame(options: CreateGameOptions): Game {
       state: state.paused ? 'paused' : state.state,
       time_left_s: round3(state.timeLeftS),
       score: state.score,
-      wind: { active: false, dir_deg: 0 },
+      wind: { active: state.wind.active, dir_deg: state.wind.active ? state.wind.dirDeg : 0 },
       player: {
         pos: r3(state.player.pos),
         vel: r3(state.player.vel),
@@ -934,7 +1212,9 @@ export function createGame(options: CreateGameOptions): Game {
         kind: m.kind,
         ttl_s: m.ttl !== undefined ? round3(m.ttl / TICK_RATE) : null,
       })),
-      drifters: [],
+      drifters: [...state.drifters]
+        .sort((a, b) => compareIds(a.id, b.id))
+        .map((d) => ({ id: d.id, pos: r3(d.pos), state: d.state, stolen: d.stolen })),
       charms: state.charms.map((c) => ({
         id: c.id,
         available: c.available,

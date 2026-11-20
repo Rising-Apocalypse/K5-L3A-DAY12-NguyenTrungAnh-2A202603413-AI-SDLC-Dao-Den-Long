@@ -196,3 +196,33 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
   - Sức chứa: đã thắp thành công 3 lần thì capacity 16; 10 lần thì bị chặn ở 20 ✓.
 - Phần web: chỉ kiểm tra được ở mức build (tsc và vite đều qua). Chưa mở game để xem thanh dầu, nhấp nháy và phím `C`.
 - Kết luận: **chấp nhận Plan 03**.
+
+## Phiên 04 — Làm nốt Phase 2: lõi headless Đêm 2–3 (2026-11-20)
+
+### 1. Quyết định của người dùng
+- Người dùng: thời gian của từng phase không quan trọng, chỉ cần nộp bài trước tối nay; "Làm hết Phase 2". Opus lưu vào bộ nhớ: không được gợi ý cắt phạm vi để kịp mốc giờ.
+- Tag `phase-2` và `phase-3` đã push, nên không dời (luật cấm viết lại lịch sử). Phần làm thêm nằm trên main sau `phase-3` và sẽ vào tag `phase-4`; ở tag sau giảng viên vẫn chạy lại test của các phase trước.
+
+### 2. Opus chuẩn bị
+- Lấy lại nguyên văn Ticket-02 từ transcript và lưu vào `docs/spec/ticket-02.md`, để truy vết từ yêu cầu tới bằng chứng.
+- **Bộ chặn golden do Opus tự viết trước khi cho agent sửa code:** `tests/golden/` lưu 5 lần chạy trọn Đêm 1 (seed 1, 2, 3 đứng yên; seed 7 và 8 chạy vòng tròn, có nhảy, lướt, tương tác, tỏa sáng và tạm dừng). `tests/guards/night1-golden.test.ts` so khớp từng byte. Mục đích: phần thêm Đêm 2–3 không được làm đổi đầu ra Đêm 1.
+- Viết Plan 04 (`docs/plans/04-phase2-nights-2-3-core.md`): module `levels.ts` có cờ cho từng đêm (Đêm 1 tắt hết cờ), hình học từng đảo, bục nhảy, tầng/dốc/vách/tháp chuông, Gió Lạc, gió, lịch sinh và tốc độ theo đêm, `--night 1|2|3`. Các giả định ghi rõ: điểm xuất phát Đêm 3 là (0,0,−30) vì (0,0,0) nằm trong tháp; "điểm sương" là vành điểm sinh Bóng Mực; Gió Lạc biến mất khỏi snapshot khi bị xóa; gió không tính vào `vel`.
+- Viết Plan 05 (web) trong lúc Sonnet làm Plan 04.
+
+### 3. Kết quả Plan 04 (Sonnet medium tự báo)
+- Thêm `levels.ts`, 24 test trong `nights.test.ts`, unit test cho levels và cho phần đọc drifter trong scenario, 16 fixture `n2-*`/`n3-*`. Kết quả: **304/304** test, golden 5/5, verify exit 0. Chạy trọn một Đêm 3 mất khoảng 0.15 s (giới hạn là 30 s).
+- Test cũ chỉ sửa một chỗ: `--night 2` không còn bị từ chối, nên test đổi sang `--night 4` (đúng mục plan cho phép, có ghi trong CHANGELOG).
+- Chỗ Sonnet làm lệch plan, Opus chấp nhận:
+  1. Trên Đêm 3, kiểm tra tiếp đất dùng `prevY ≥ h − STEP_UP`; nếu không, Mây có thể rơi xuyên qua mặt tầng.
+  2. Khi `fall_enabled: false`, việc chặn đi ra vùng trống bị bỏ qua trong lúc đang bay từ bục nhảy.
+  3. Vài test đặt đúng vào biên hình học (r = 24, r = 2, r = 12) nên kiểm tra theo khoảng, có ghi lý do.
+
+### 4. Opus review (tự chạy lại)
+- Golden: mtime của các file vẫn là lúc Opus tạo, không ai sửa. `git diff` các test cũ: chỉ có chỗ đổi `--night 4`.
+- **Scenario Opus tự viết, so với tính tay:**
+  - Bục nhảy Đêm 2 tại (50,0,−18) bay về đảo A: tiếp đất ở tick **84**, vị trí **(18.386, −6.619)** = (50 − 33.6·50/53.141, −18 + 33.6·18/53.141) ✓.
+  - Gió Đêm 3: gió hướng 354°, cả cơn 300 tick đẩy Mây đứng yên đi đúng **10.0 m** (x 9.945 = 10·cos 354°) ✓.
+  - Gió Lạc: đứng yên cách 10 m, Mây mang 5. Nó phải đi 8.8 m với tốc độ 7/60 m mỗi tick → ⌈75.43⌉ = tick **76**, sự kiện `drifter_steal {3, carried 2}`. Bị xóa ở tick **316** = 76 + 240 ✓. Mang 4 thì không đuổi ✓.
+  - Bình minh Đêm 3: 5/7 đèn sáng → thắng, điểm 5×(50+99) + 3×50 = **895** ✓. Đêm 2: 3/6 đèn sáng → thua `dawn` ✓.
+  - Chạy trọn Đêm 2 với seed 2: lúc nào cũng có tối đa 2 Gió Lạc, con đầu tiên xuất hiện ở tick 1200 ✓.
+- Kết luận: **chấp nhận Plan 04**.

@@ -2,7 +2,7 @@ import { UsageError } from '../core/errors';
 
 export interface CliArgs {
   seed: number;
-  night: 1;
+  night: 1 | 2 | 3;
   ticks: number;
   out: string;
   scenario?: string;
@@ -11,7 +11,7 @@ export interface CliArgs {
 }
 
 export const USAGE =
-  'usage: headless --seed <int> --night 1 --ticks <int> --out <file.jsonl> ' +
+  'usage: headless --seed <int> --night <1|2|3> --ticks <int> --out <file.jsonl> ' +
   '[--scenario <file.json>] [--inputs <file.json>] [--snapshot-every <int>]';
 
 function parseInteger(flag: string, text: string): number {
@@ -43,7 +43,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
 
   const seed = parseInteger('--seed', need('--seed'));
   const night = parseInteger('--night', need('--night'));
-  if (night !== 1) throw new UsageError(`--night ${night} is not supported (only 1)`);
+  if (night !== 1 && night !== 2 && night !== 3) throw new UsageError(`--night ${night} is not supported (only 1, 2 or 3)`);
   const ticks = parseInteger('--ticks', need('--ticks'));
   if (ticks < 0) throw new UsageError('--ticks must be >= 0');
   const out = need('--out');
@@ -52,5 +52,5 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   const snapshotEvery = raw.has('--snapshot-every') ? parseInteger('--snapshot-every', raw.get('--snapshot-every')!) : 10;
   if (snapshotEvery < 1) throw new UsageError('--snapshot-every must be >= 1');
 
-  return { seed, night: 1, ticks, out, scenario: raw.get('--scenario'), inputs: raw.get('--inputs'), snapshotEvery };
+  return { seed, night, ticks, out, scenario: raw.get('--scenario'), inputs: raw.get('--inputs'), snapshotEvery };
 }

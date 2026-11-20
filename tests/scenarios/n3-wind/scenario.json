@@ -1,0 +1,10 @@
+{
+  "random_motes": false,
+  "random_shades": false,
+  "random_drifters": false,
+  "motes": [],
+  "shades": [],
+  "charms": [],
+  "wind_enabled": true,
+  "time_left_s": 1000
+}

@@ -11,6 +11,8 @@ export interface RunOptions {
   ticks: number;
   /** Snapshot every n ticks (default 1, so tests can look at every single tick). */
   every?: number;
+  /** Night to play (default: 2 / 3 for fixtures named n2-* / n3-*, else 1). */
+  night?: 1 | 2 | 3;
 }
 
 /** One parsed JSONL line (loosely typed on purpose: the tests assert the exact shapes). */
@@ -44,7 +46,7 @@ export function createRunner() {
 
   function execute(extra: string[], opts: RunOptions): Result {
     const out = join(dir, `run-${counter++}.jsonl`);
-    const args = ['--seed', String(opts.seed ?? 1), '--night', '1', '--ticks', String(opts.ticks), '--snapshot-every', String(opts.every ?? 1), '--out', out, ...extra];
+    const args = ['--seed', String(opts.seed ?? 1), '--night', String(opts.night ?? 1), '--ticks', String(opts.ticks), '--snapshot-every', String(opts.every ?? 1), '--out', out, ...extra];
     const r = spawnSync(process.execPath, [BIN, ...args], { cwd: ROOT, encoding: 'utf8' });
     const text = existsSync(out) ? readFileSync(out, 'utf8') : '';
     const lines: Line[] = text === '' ? [] : text.trimEnd().split('\n').map((l) => JSON.parse(l));
@@ -69,6 +71,11 @@ export function createRunner() {
 
   return {
     dir,
+    /** Raw CLI call with exactly these arguments. */
+    cli(args: string[]): { status: number | null; stderr: string } {
+      const r = spawnSync(process.execPath, [BIN, ...args], { cwd: ROOT, encoding: 'utf8' });
+      return { status: r.status, stderr: r.stderr };
+    },
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
     /** Run a fixture from tests/scenarios/<name>/ (scenario.json and inputs.json, either may be missing). */
     fixture(name: string, opts: RunOptions): Result {
@@ -76,7 +83,7 @@ export function createRunner() {
       const extra: string[] = [];
       if (existsSync(join(base, 'scenario.json'))) extra.push('--scenario', join(base, 'scenario.json'));
       if (existsSync(join(base, 'inputs.json'))) extra.push('--inputs', join(base, 'inputs.json'));
-      return execute(extra, opts);
+      return execute(extra, { night: name.startsWith('n2-') ? 2 : name.startsWith('n3-') ? 3 : 1, ...opts });
     },
     /** Run with scenario / inputs given as objects. */
     play(scenario: unknown, inputs: unknown, opts: RunOptions): Result {

@@ -1,4 +1,5 @@
 import { Rng } from './rng';
+import type { Level } from './levels';
 import type { LanternState, MoteState, Vec3 } from './types';
 
 // Night 1 "Đảo Bến": a fixed standard map. These numbers are level geometry / physics constants, NOT contract
@@ -19,7 +20,7 @@ export const PLAYER_START_FACING: [number, number] = [0, 1];
 /** Number of motes on the island at the start (chosen from MOTE_SPAWN_POINTS). */
 export const DEFAULT_MOTE_COUNT = 20;
 
-const LANTERN_POSITIONS: readonly Vec3[] = [
+export const LANTERN_POSITIONS: readonly Vec3[] = [
   [0, 0, 25],
   [23.8, 0, 7.7],
   [14.7, 0, -20.2],
@@ -27,11 +28,12 @@ const LANTERN_POSITIONS: readonly Vec3[] = [
   [-23.8, 0, 7.7],
 ];
 
-function ring(radius: number, count: number, startDeg: number, stepDeg: number): Vec3[] {
+/** Points on a circle of `radius` around (cx, cz) at height y (angles from +X towards +Z; centre 0,0 and y 0 = Night 1). */
+export function ring(radius: number, count: number, startDeg: number, stepDeg: number, cx = 0, cz = 0, y = 0): Vec3[] {
   const points: Vec3[] = [];
   for (let i = 0; i < count; i++) {
     const a = ((startDeg + i * stepDeg) * Math.PI) / 180;
-    points.push([radius * Math.cos(a), 0, radius * Math.sin(a)]);
+    points.push([cx + radius * Math.cos(a), y, cz + radius * Math.sin(a)]);
   }
   return points;
 }
@@ -42,9 +44,9 @@ export const MOTE_SPAWN_POINTS: readonly Vec3[] = [...ring(12, 8, 0, 45), ...rin
 /** 12 shade spawn points (ground positions): r=37 at 15,45,..,345 degrees. */
 export const SHADE_SPAWN_POINTS: readonly Vec3[] = ring(37, 12, 15, 30);
 
-/** Great Lanterns L1..L5 at their fixed positions, all unlit and empty. */
-export function buildLanterns(): LanternState[] {
-  return LANTERN_POSITIONS.map((pos, i) => ({
+/** Great Lanterns at the level's fixed positions (default: Night 1, L1..L5), all unlit and empty. */
+export function buildLanterns(level?: Pick<Level, 'lanternPositions'>): LanternState[] {
+  return (level?.lanternPositions ?? LANTERN_POSITIONS).map((pos, i) => ({
     id: `L${i + 1}`,
     pos: [pos[0], pos[1], pos[2]],
     lit: false,
@@ -59,9 +61,9 @@ export function buildLanterns(): LanternState[] {
  * 20 motes on 20 distinct spawn points: a Fisher-Yates shuffle of the 24 points driven by the "motes" stream,
  * taking the first 20 in shuffled order (ids M1..M20, y = 0).
  */
-export function buildMotes(seed: number): MoteState[] {
+export function buildMotes(seed: number, level?: Pick<Level, 'moteSpawnPoints'>): MoteState[] {
   const rng = new Rng(seed, 'motes');
-  const points = MOTE_SPAWN_POINTS.map((p): Vec3 => [p[0], p[1], p[2]]);
+  const points = (level?.moteSpawnPoints ?? MOTE_SPAWN_POINTS).map((p): Vec3 => [p[0], p[1], p[2]]);
   for (let i = points.length - 1; i > 0; i--) {
     const j = rng.int(0, i);
     [points[i], points[j]] = [points[j]!, points[i]!];

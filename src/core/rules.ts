@@ -85,3 +85,39 @@ export const DRAIN_REACH = 2.0;
 export const DRAIN_BREAK_DIST = 6.0;
 export const FUEL_EVENT_EVERY = 60;
 
+
+// --- Phase 2 completion: Nights 2-3 (docs/plans/04-phase2-nights-2-3-core.md) ----------------------------------
+/** Tier walls (Night 3): the most Mây walks up in one tick, and the most she snaps down a ramp. Ramps rise <= 0.05/tick. */
+export const STEP_UP = 0.35;
+export const STEP_DOWN = 0.35;
+/** Jump pads: XZ trigger radius, and how close Mây's feet must be to the pad's height. */
+export const PAD_RADIUS = 1.0;
+export const PAD_FOOT_EPS = 0.01;
+/** Per-night shade schedule (Night 1 keeps SHADE_SPAWN_EVERY / SHADE_MAX / tuning.shade_speed). */
+export const SHADE_SPEED_NIGHT3 = 4.5;
+export const SHADE_SPAWN_EVERY_N2 = 420;
+export const SHADE_SPAWN_EVERY_N3 = 360;
+export const SHADE_MAX_N2 = 8;
+export const SHADE_MAX_N3 = 10;
+/** Drifters (Gió Lạc). */
+export const DRIFTER_MAX = 2;
+export const DRIFTER_SPAWN_EVERY = 1200;
+export const DRIFTER_SPEED = 7.0;
+export const DRIFTER_IDLE_SPEED = 2.0;
+/** A drifter notices Mây when she carries at least this many motes and is within DRIFTER_DETECT metres. */
+export const DRIFTER_CHASE_CARRIED = 5;
+export const DRIFTER_DETECT = 15;
+export const DRIFTER_HIT_RADIUS = 1.2;
+export const DRIFTER_STEAL_MAX = 3;
+export const DRIFTER_FLEE_TICKS = 240;
+export const DRIFTER_DROP_VANISH_TICKS = 120;
+export const DRIFTER_HOVER_Y = 1.0;
+export const DRIFTER_IDLE_REPICK_TICKS = 180;
+/** Wind (Night 3): gust k is announced WIND_WARN_TICKS before tick WIND_EVERY * k and blows for WIND_TICKS ticks. */
+export const WIND_EVERY = 1800;
+export const WIND_TICKS = 300;
+export const WIND_WARN_TICKS = 120;
+export const WIND_SPEED = 2.0;
+/** Bell tower of Night 3: a cylinder that blocks Mây below TOWER_TOP_Y (tier 2 at 6 m plus an 8 m tower). */
+export const TOWER_RADIUS = 2.0;
+export const TOWER_TOP_Y = 14;

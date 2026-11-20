@@ -36,6 +36,8 @@ export interface PlayerState {
   dashDir: [number, number];
   charmTicks: number;
   successfulLights: number;
+  /** Horizontal velocity [x, z] of a jump-pad launch while it lasts (move input is ignored), else null. */
+  launch: [number, number] | null;
 }
 
 export interface CharmState {
@@ -78,6 +80,29 @@ export interface ShadeState {
   drainTicks: number;
 }
 
+export type DrifterStateName = 'idle' | 'chase' | 'flee';
+
+/** A wind drifter (Gió Lạc): steals motes from a loaded Mây. Internal counters are not part of the output. */
+export interface DrifterState {
+  id: string;
+  pos: Vec3;
+  state: DrifterStateName;
+  /** Motes it carries away (0 until it has stolen). */
+  stolen: number;
+  /** Ticks left in `flee`; at 0 the drifter disappears. */
+  fleeTicks: number;
+  idleTarget: Vec3 | null;
+  /** Ticks until the idle target is re-picked. */
+  idleTicks: number;
+}
+
+export interface WindState {
+  active: boolean;
+  dirDeg: number;
+  /** True during the announce ticks before a gust (web only; not in the snapshot). */
+  warning: boolean;
+}
+
 export interface MoteState {
   id: string;
   pos: Vec3;
@@ -103,12 +128,16 @@ export interface GameState {
   shades: ShadeState[];
   motes: MoteState[];
   charms: CharmState[];
+  drifters: DrifterState[];
+  wind: WindState;
   /** Button levels of the previous step, used for false -> true edge detection. */
   prevButtons: Buttons;
   /** Number to use for the next auto-generated shade id ("S<n>"), so ids are never reused. */
   nextShadeNum: number;
   /** Number to use for the next auto-generated mote id ("M<n>"): random spawns and dropped motes. */
   nextMoteNum: number;
+  /** Number to use for the next auto-generated drifter id ("D<n>"). */
+  nextDrifterNum: number;
 }
 
 /** The contract events, `name` + `data` exactly as in Test Contract section E and Contract v1.2. */
@@ -121,6 +150,8 @@ export type GameEvent =
   | { name: 'fuel_drain'; data: { lantern_id: string; shade_id: string; fuel: number } }
   | { name: 'pulse'; data: { stunned_ids: string[] } }
   | { name: 'player_hit'; data: { by: 'shade'; flames: number; dropped: number } | { by: 'fall'; flames: number; dropped: number; lost: number } }
+  | { name: 'drifter_steal'; data: { drifter_id: string; amount: number; carried: number } }
+  | { name: 'drifter_drop'; data: { drifter_id: string; amount: number } }
   | { name: 'shade_spawned'; data: { id: string } }
   | { name: 'game_over'; data: { result: 'won' | 'lost'; reason: 'dawn_survived' | 'dawn' | 'no_flames' } }
   | { name: 'dash'; data: Record<string, never> }
@@ -163,7 +194,7 @@ export interface Snapshot {
   shades: { id: string; pos: Vec3; state: ShadeStateName }[];
   motes_active: number;
   motes: { id: string; pos: Vec3; kind: 'random' | 'dropped'; ttl_s: number | null }[];
-  drifters: never[];
+  drifters: { id: string; pos: Vec3; state: DrifterStateName; stolen: number }[];
   charms: { id: string; available: boolean; respawn_s: number }[];
 }
 

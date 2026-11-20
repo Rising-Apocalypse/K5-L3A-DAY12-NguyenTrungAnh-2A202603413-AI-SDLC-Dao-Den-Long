@@ -7,7 +7,7 @@ Small 3D game (TypeScript + Three.js) with a deterministic headless mode that is
 - `npm ci && npm run build` — typecheck, `dist/headless.js`, `dist/web/`
 - `npm test` — build headless + Vitest (unit, CLI, architecture guards)
 - `npm run verify` — build + tests + every `tests/scenarios/*` run twice; writes `docs/proof/verify-latest.md`
-- `node dist/headless.js --seed 1 --night 1 --ticks 600 --out out/a.jsonl [--scenario f.json] [--inputs f.json]`
+- `node dist/headless.js --seed 1 --night 1|2|3 --ticks 600 --out out/a.jsonl [--scenario f.json] [--inputs f.json]`
 - `npm run play` — serve the web build (Three.js view)
 
 ## Architecture rules (enforced by `tests/guards/architecture.test.ts`)
@@ -15,6 +15,9 @@ Small 3D game (TypeScript + Three.js) with a deterministic headless mode that is
   and no `Math.random`/`Date`/`performance.now`. Randomness only via `src/core/rng.ts` (labelled streams).
 - All gameplay goes through the single `step(input)` in `src/core/sim.ts`; web and headless share it.
 - Every tuning number comes from `game.contract.json` via `src/core/tuning.ts`. No duplicated magic numbers.
+- Per-night maps and rule flags live in `src/core/levels.ts` (`getLevel(night)`); Night 1 must stay byte-identical:
+  `tests/guards/night1-golden.test.ts` compares 5 full runs with `tests/golden/*.jsonl` — never regenerate or edit `tests/golden`,
+  fix the code instead (new behaviour goes behind a level flag that is off for Night 1).
 - `src/extras/**` is web only and never loaded by headless (extras must not change headless output).
 
 ## Contract pitfalls

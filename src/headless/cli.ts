@@ -26,7 +26,7 @@ function run(argv: string[]): void {
   const scenario = args.scenario !== undefined ? parseScenario(readJson('scenario', args.scenario)) : undefined;
   // No inputs file -> an empty timeline, i.e. the player stands still.
   const timeline = parseInputsFile(args.inputs !== undefined ? readJson('inputs', args.inputs) : { frames: [] });
-  const game = createGame({ seed: args.seed, scenario });
+  const game = createGame({ seed: args.seed, night: args.night, scenario });
 
   const lines: string[] = [JSON.stringify(game.snapshot())];
   let steps = 0;
