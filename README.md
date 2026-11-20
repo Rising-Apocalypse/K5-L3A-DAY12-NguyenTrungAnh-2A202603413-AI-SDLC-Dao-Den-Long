@@ -39,7 +39,7 @@ Cần Node.js 20 trở lên (đã thử trên Node 24). Có thể chọn seed: `
 | R | Chơi lại Đêm đang chơi |
 
 Menu chính: Bắt đầu (Đêm 1 → 2 → 3 → màn Bình Minh với tổng điểm), Chọn Đêm (luyện tập), Cài đặt (âm lượng, độ nhạy chuột, bảng màu; lưu lại trong `localStorage`, khoá `dao-den-long.settings.v1`).
-Thêm `?fps=1` vào địa chỉ để hiện bộ đếm FPS (trung bình 2 giây gần nhất).
+Thêm `?fps=1` vào địa chỉ để hiện bộ đếm FPS (trung bình 2 giây gần nhất). Số đo đã ghi: `docs/proof/manual-measurements.md`.
 
 (Plan gốc ghi Q/E để xoay camera, nhưng E đã dùng cho tương tác nên camera dùng `[` `]` và kéo chuột.)
 
