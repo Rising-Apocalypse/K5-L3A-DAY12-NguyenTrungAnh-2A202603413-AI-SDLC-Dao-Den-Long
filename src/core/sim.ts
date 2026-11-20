@@ -94,6 +94,11 @@ export interface CreateGameOptions {
   tuning?: Tuning;
   /** Web only. The headless CLI never passes extras. */
   extras?: readonly Extra[];
+  /**
+   * Benchmark scene (Night 1 only, default off): L1-L3 lit with full fuel, 200 wandering shades and 100 motes spread over
+   * the island; spawns, hits, pickup, fuel decay/drain and the end of the night are switched off. See `applyBench`.
+   */
+  bench?: boolean;
 }
 
 export interface Game {
@@ -311,6 +316,45 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning, level: Lev
   };
 }
 
+/** Number of shades and motes in the benchmark scene (Ticket-04 section 1). */
+const BENCH_SHADES = 200;
+const BENCH_MOTES = 100;
+const BENCH_LIT_LANTERNS = 3;
+
+/** Uniform point on the island disc (r = ISLAND_RADIUS * sqrt(u)) outside every lit safe zone, drawn from `rng`. */
+function benchPoint(rng: Rng, lit: readonly LanternState[], tuning: Tuning, y: number): Vec3 {
+  for (;;) {
+    const r = ISLAND_RADIUS * Math.sqrt(rng.next());
+    const a = 2 * Math.PI * rng.next();
+    const pos: Vec3 = [r * Math.cos(a), y, r * Math.sin(a)];
+    if (lit.every((l) => xzDist(pos, l.pos) >= tuning.safe_radius)) return pos;
+  }
+}
+
+/** Turn a freshly built Night 1 state into the benchmark scene. Emits no events and awards no points. */
+function applyBench(state: GameState, seed: number, tuning: Tuning): void {
+  const full = fuelUnitsOf(tuning).full;
+  state.lanterns.forEach((l, i) => {
+    const lit = i < BENCH_LIT_LANTERNS;
+    l.lit = lit;
+    l.fuelUnits = lit ? full : 0;
+    l.everLit = lit;
+    l.deposited = 0;
+    l.relitCount = 0;
+  });
+  const lit = state.lanterns.filter((l) => l.lit);
+  const rng = new Rng(seed, 'bench');
+  state.player.pos = [0, 0, 0];
+  state.player.carried = 0;
+  state.shades = [];
+  for (let i = 1; i <= BENCH_SHADES; i++) state.shades.push(newShade(`S${i}`, benchPoint(rng, lit, tuning, SHADE_HOVER_Y), 'wander'));
+  state.motes = [];
+  for (let i = 1; i <= BENCH_MOTES; i++) state.motes.push({ id: `M${i}`, pos: benchPoint(rng, lit, tuning, 0), active: true, kind: 'random' });
+  state.drifters = [];
+  state.nextShadeNum = BENCH_SHADES + 1;
+  state.nextMoteNum = BENCH_MOTES + 1;
+}
+
 /** Feet at or below the ground surface under them (Night 1: y <= 0 and within ISLAND_RADIUS of the centre). */
 function standsOnGround(level: Level, pos: Vec3): boolean {
   const h = level.groundAt(pos[0], pos[2]);
@@ -334,6 +378,8 @@ interface Step {
   readonly randomShades: boolean;
   readonly randomDrifters: boolean;
   readonly windEnabled: boolean;
+  /** Benchmark scene: no spawns, hits, pickup, fuel loss or end of night. */
+  readonly bench: boolean;
   readonly fuel: FuelUnits;
   /** Set by stage 2 when the fall-wait ends this tick; stage 3 then respawns Mây instead of moving her. */
   respawn: boolean;
@@ -359,10 +405,10 @@ function stageCounters(c: Step): void {
     if (s.spawnTicks > 0) s.spawnTicks -= 1;
     if (s.stunTicks > 0) s.stunTicks -= 1;
   }
-  // Rule 2: natural decay, then every draining shade takes its share (lowest shade id first).
-  for (const l of lanterns) if (l.lit) l.fuelUnits -= c.fuel.decay;
+  // Rule 2: natural decay, then every draining shade takes its share (lowest shade id first). Off in the bench scene.
+  if (!c.bench) for (const l of lanterns) if (l.lit) l.fuelUnits -= c.fuel.decay;
   for (const s of ascending(shades)) {
-    if (s.state !== 'drain') continue;
+    if (c.bench || s.state !== 'drain') continue;
     s.drainTicks += 1;
     const target = lanterns.find((l) => l.id === s.targetLanternId);
     if (!target || !target.lit) continue;
@@ -595,7 +641,7 @@ function stageMovePlayer(c: Step): void {
 function stagePickup(c: Step): void {
   const { state, tuning } = c;
   const p = state.player;
-  if (p.fallWaitTicks > 0) return;
+  if (p.fallWaitTicks > 0 || c.bench) return;
 
   for (const m of state.motes) {
     if (p.carried >= capacity(state, tuning)) break;
@@ -981,6 +1027,7 @@ function stageDrifters(c: Step): void {
 
 /** Stage 9: the first eligible shade (lowest id) touching Mây hits her; at most one hit per tick. */
 function stageHits(c: Step): void {
+  if (c.bench) return;
   const { state, tuning } = c;
   const p = state.player;
 
@@ -1060,6 +1107,7 @@ function spawnShades(c: Step, count: number): void {
 
 /** Stage 10: scheduled spawns. New entities only take part from the next tick. */
 function stageSpawns(c: Step): void {
+  if (c.bench) return;
   const t = c.state.simTick;
   if (c.randomMotes && t % MOTE_SPAWN_EVERY === 0) spawnMote(c);
   if (c.level.drifters && c.randomDrifters && t % DRIFTER_SPAWN_EVERY === 0 && c.state.drifters.length < DRIFTER_MAX) spawnDrifter(c);
@@ -1077,6 +1125,7 @@ function spawnDrifter(c: Step): void {
 
 /** Stage 11: first match wins: no flames, then at dawn survive (enough lit lanterns) or lose. No early win. */
 function stageEnd(c: Step): void {
+  if (c.bench) return;
   const { state, tuning } = c;
   let outcome: Extract<GameEvent, { name: 'game_over' }>['data'] | null = null;
   if (state.player.flames <= 0) {
@@ -1101,7 +1150,10 @@ export function createGame(options: CreateGameOptions): Game {
   const extras = options.extras ?? [];
   const scenario = options.scenario ?? {};
   const level = getLevel(options.night ?? 1);
+  const bench = options.bench === true;
+  if (bench && level.night !== 1) throw new Error('bench mode is only available for Night 1');
   const state = buildState(options.seed, scenario, tuning, level);
+  if (bench) applyBench(state, options.seed, tuning);
   const startTimeS = state.timeLeftS;
   const extrasRng = new Rng(options.seed, 'extras');
   for (const extra of extras) extra.onBuild?.(state, extrasRng);
@@ -1134,7 +1186,7 @@ export function createGame(options: CreateGameOptions): Game {
       return events;
     }
     state.simTick += 1;
-    state.timeLeftS = startTimeS - state.simTick / TICK_RATE;
+    if (!bench) state.timeLeftS = startTimeS - state.simTick / TICK_RATE;
 
     // Stage 1: input edges. Stages 2-11 follow in the contract's fixed order; web and headless share this.
     const c: Step = {
@@ -1150,6 +1202,7 @@ export function createGame(options: CreateGameOptions): Game {
       randomShades: scenario.randomShades !== false,
       randomDrifters: scenario.randomDrifters !== false,
       windEnabled: scenario.windEnabled !== false,
+      bench,
       fuel,
       respawn: false,
       newlyLit: [],

@@ -13,15 +13,32 @@ theo Test Contract v1.0 (`docs/spec/contract-v1.0.md`).
 > Trạng thái: Phase 1 hoàn tất (Đêm 1 chơi được: nhặt đốm sáng, nạp đèn, Bóng Mực, pulse, thắng/thua, tính điểm).
 > Lõi headless đã có Đêm 1-3, lướt, tạm dừng, gió, Gió Lạc; chưa có trên web (phase sau): menu/âm thanh, chơi Đêm 2-3.
 
+## Yêu cầu hệ thống
+
+- Node.js 20 trở lên (đã thử trên Node 24), npm.
+- Để chơi: trình duyệt bất kỳ có WebGL2 (Chrome, Edge, Firefox, Safari).
+- Để chạy bench: Chrome, Chromium hoặc Edge đã cài (không cần cài thêm gói npm). Có thể chỉ đường dẫn bằng biến môi trường `CHROME_PATH`.
+
 ## Cài đặt & chạy (3 lệnh)
 
 ```bash
 git clone <URL-repo-của-bạn>
-cd <thư-mục-repo> && npm ci && npm run build
-npm run play
+cd <thư-mục-repo>
+npm ci && npm run build && npm run play
 ```
 
-Cần Node.js 20 trở lên (đã thử trên Node 24). Có thể chọn seed: `http://localhost:4173/?seed=7`.
+`npm run play` chạy launcher `node dist/play.js`: phục vụ bản web `dist/web` tại `http://127.0.0.1:4173/` (nếu bận thì cổng kế tiếp tới 4183) và tự mở trình duyệt (`--no-open` để tắt). Có thể chọn seed: `http://127.0.0.1:4173/?seed=7`.
+
+### Bảng xếp hạng (lưu trên đĩa)
+
+Launcher lưu bảng xếp hạng tại `data/leaderboard.json` (cạnh `dist/`; thư mục `data/` tạo khi cần và nằm trong `.gitignore`; đường dẫn in ra khi khởi động). Máy chủ có `GET /api/leaderboard` và `POST /api/leaderboard` (kiểm tra tên 3–12 ký tự chữ/số/`_`, có tiếng Việt có dấu; giữ top 10, điểm giảm dần, hoà thì ai đạt trước đứng trên). Màn hình Bảng xếp hạng trong menu thuộc Plan 07.
+
+Xuất bảng (không bật máy chủ):
+
+```bash
+node dist/play.js --export-leaderboard out.json    # ghi {"entries": [ ... ]} đúng thứ tự, in số mục
+node dist/play.js --leaderboard-file khac.json --export-leaderboard out.json   # đọc file lưu khác
+```
 
 ## Điều khiển
 
@@ -80,6 +97,36 @@ npm run verify    # build + test + chạy mọi tests/scenarios/* hai lần, so 
 ```
 
 `npm run verify` ghi báo cáo vào `docs/proof/verify-latest.md` và `docs/proof/phase-1.md` (yêu cầu → test/kịch bản → kết quả + mã commit; file tự sinh, không sửa tay).
+
+## Bench (hiệu năng)
+
+```bash
+npm run build
+node scripts/bench.mjs --seed 42 --duration 30 --out bench.json
+```
+
+Script phục vụ `dist/web`, mở Chrome/Chromium/Edge đã cài (cửa sổ 1280x720 tại (0,0), có đầu, không toàn màn hình, hồ sơ tạm mới) vào trang `?bench=1&seed=42&duration=30`, rồi ghi `bench.json` và in tóm tắt với ngưỡng. Cảnh bench: Đêm 1 đầy đủ hiệu ứng, đèn L1–L3 sáng đầy dầu, đúng 200 Bóng Mực `wander` và 100 đom đóm rải đều; không sinh thêm, không sát thương, không nhặt, không hao dầu, không hết Đêm; Mây đứng yên ở (0,0,0); camera bay vòng bán kính 30 m, cao 15 m, 15 s một vòng, xuất phát (30,15,0). 3 s đầu khởi động (không đo), sau đó đo đúng `--duration` giây. Máy tính của người chấm mới là số tính điểm.
+
+| Khoá | Ý nghĩa | Ngưỡng đạt |
+|---|---|---|
+| `avg_fps` | 1000·N / Σdt | >= 60 |
+| `p1_low_fps` | 1000 / trung bình k giá trị dt lớn nhất, k = max(1, ceil(N/100)) | >= 30 |
+| `frame_ms_p95` | phân vị 95 của dt (nearest-rank), ms | (không có ngưỡng) |
+| `frames` | số khung hình trong khoảng đo | |
+| `load_ms` | từ lúc script bắt đầu tới khung hình đầu tiên của cảnh bench | <= 10000 |
+| `peak_mem_mb` | RSS cao nhất của cây tiến trình trình duyệt trong khoảng đo (`null` trên Windows) | |
+| `vsync_off` | luôn `true`: cờ `--disable-gpu-vsync --disable-frame-rate-limit` đã được YÊU CẦU | |
+| `renderer`, `os` | GPU (WebGL) + phiên bản three.js; hệ điều hành, CPU, RAM | |
+
+`vsync_off: true` nghĩa là yêu cầu đã được gửi chứ không đảm bảo: trình duyệt/hệ điều hành (nhất là macOS) vẫn có thể giữ tốc độ làm tươi của màn hình, khi đó `avg_fps` bị chặn ở tần số màn hình. Đừng đo khi máy đang ở chế độ tiết kiệm pin.
+
+## Soak (chạy lâu)
+
+```bash
+node --expose-gc dist/soak.js --seed 7 --nights 10 --out soak.json [--verbose]
+```
+
+Chạy 10 Đêm liên tiếp trong một tiến trình (Đêm 1 → 2 → 3 xoay vòng, Đêm thứ i dùng seed 7 + i) với input ngẫu nhiên theo seed (đổi hướng mỗi 30 tick; mỗi tick 5% nhảy, 3% lướt, 2% pulse, 10% tương tác). Ghi `{"contract_version", "nights", "crashes", "results", "mem_start_mb", "mem_end_mb", "duration_s"}`; `--verbose` in từng Đêm (`đêm seed kết-quả số-tick`). Ngưỡng đạt: `crashes` = 0 và `mem_end_mb` <= 1.2 × `mem_start_mb` (RSS sau khi tải Đêm đầu, và sau khi thả Đêm cuối rồi `gc()`; cần `--expose-gc`). Lệnh luôn thoát mã 0 trừ khi dùng sai lệnh (mã 1); file là bằng chứng. Chi tiết: `docs/notes/assumptions.md`, mục "Phase 4".
 
 ## Cách tính điểm
 

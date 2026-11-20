@@ -173,3 +173,19 @@ Không khoá nào là `null`: game dùng đủ mọi khái niệm của contract
 - **Mũi tên mép màn hình:** hiện khi đèn chưa sáng gần nhất (XZ) nằm ngoài khung nhìn hoặc sau camera; chiếu điểm cao bằng đèn lồng.
 - **Lá gió:** tối đa 160 hạt (một nửa lúc báo trước), vị trí là hàm của thời gian thực của web, không dùng ngẫu nhiên của lõi.
 
+## Phase 4
+
+- **Đánh số seed của soak:** "Đêm thứ i" tính từ 1, nên Đêm thứ i dùng seed `seed + i` (seed 7 → 8, 9, …, 17 cho 10 Đêm); Đêm `((i − 1) % 3) + 1`.
+- **Input soak:** luồng `soak` riêng (`new Rng(seed + i, 'soak')`): mỗi 30 tick (tick 0, 30, …) chọn góc ngẫu nhiên cho `move`; mỗi tick lần lượt rút nhảy 5%, lướt 3%, pulse 2%, tương tác 10%; không tạm dừng, `camYawDeg` 0.
+- **Khởi động soak:** trước vòng lặp, soak chạy bỏ đi (không tính) một ván khởi động ngắn cho mỗi Đêm 1–3 (1800 bước) để JIT và vùng nhớ đạt kích thước làm việc. Không có bước này `mem_start_mb` đo lúc tiến trình còn "lạnh" (khoảng 46 MB) và `mem_end_mb` luôn vượt 1.2 lần (khoảng 60 MB) dù không có rò rỉ (chạy 100 Đêm vẫn quanh 62 MB). Đây là bổ sung so với kế hoạch, ghi rõ để người chấm biết.
+- **Kết quả soak:** `won`/`lost`; `timeout` nếu hết thời lượng mà chưa kết thúc (không xảy ra vì bước 11 kết thúc Đêm lúc bình minh); `crash` nếu một Đêm ném lỗi (tính vào `crashes`, các Đêm sau vẫn chạy). Soak thoát mã 0 kể cả khi ngưỡng không đạt (file là bằng chứng), mã 1 khi dùng sai lệnh.
+- **Bố trí cảnh bench:** 200 Bóng Mực (y = 1.0) và 100 đom đóm (y = 0) rải đều theo diện tích trên đĩa bán kính 38 m (`r = 38·√u`, góc `2π·v`, luồng `bench`), bốc lại nếu rơi vào vùng an toàn của đèn sáng (L1–L3, bán kính 6 m). Mây đứng yên ở (0,0,0) và Bóng Mực vẫn đuổi theo luật bình thường khi Mây trong tầm 12 m. Đom đóm của bench vượt trần 30 của gameplay.
+- **Camera bench:** `(30·cos θ, 15, 30·sin θ)`, `θ = 2π·t/15`, nhìn vào (0,0,0); bắt đầu tại (30,15,0) và quay về phía +Z (quy ước góc của bản đồ: 90° là +Z).
+- **Cờ vsync:** trình duyệt được mở với `--disable-gpu-vsync --disable-frame-rate-limit` (cửa sổ 1280x720 tại (0,0), có đầu, không toàn màn hình). `vsync_off: true` nghĩa là đã YÊU CẦU tắt vsync; trình duyệt và hệ điều hành có thể vẫn giới hạn ở tần số màn hình (macOS thường vậy). Không có cách kiểm chứng từ trang web.
+- **Bộ nhớ đỉnh của bench:** RSS cao nhất của cả cây tiến trình trình duyệt (tiến trình đã mở và mọi con cháu, đo bằng `ps -A -o pid=,ppid=,rss=` mỗi 500 ms), chỉ trong khoảng đo (từ khi hết 3 s khởi động); trên Windows ghi `null` vì không đo được bằng `ps`. RSS tính cả vùng nhớ dùng chung giữa các tiến trình, nên có thể cao hơn bộ nhớ thật.
+- **`load_ms`:** từ lúc `scripts/bench.mjs` bắt đầu (`Date.now()` ở đầu script) tới khung hình đầu tiên của cảnh bench (`Date.now()` trong trang), cùng một đồng hồ vì cùng máy. Gồm cả thời gian khởi động trình duyệt.
+- **Khoảng đo bench:** khung hình có thời điểm trong (3 s, 3 s + duration]; mỗi dt tính từ khung hình liền trước. `p1_low_fps` và `frame_ms_p95` theo định nghĩa của ticket (nearest-rank cho p95), tính bằng số nguyên để tránh sai số dấu phẩy động.
+- **Cổng:** launcher thử 4173 rồi các cổng kế tiếp tới 4183; hết thì báo lỗi, thoát mã 1. Chỉ lắng nghe 127.0.0.1.
+- **Bảng xếp hạng:** tên cắt khoảng trắng hai đầu, chuẩn hoá NFC, đếm bằng `[...name].length` (3–12), mỗi ký tự thuộc `\p{L}`, `\p{M}`, `\p{N}` hoặc `_` (gồm tiếng Việt có dấu); khoảng trắng giữa tên và emoji bị từ chối. `score` là số nguyên >= 0, `nights_won` nguyên 0–3, `achieved_at` ISO 8601 có `Z` hoặc `±hh:mm`. Hoà điểm: ai có `achieved_at` sớm hơn (so theo thời điểm, không so chuỗi) đứng trên, hoà tiếp thì giữ thứ tự thêm vào. File lưu hỏng hoặc thiếu coi như bảng rỗng.
+- **Lưu trữ:** `<thư mục repo hoặc bản phát hành>/data/leaderboard.json` (cạnh `dist/`), ghi nguyên tử (file tạm rồi đổi tên); `data/` nằm trong `.gitignore`.
+

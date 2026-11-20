@@ -12,7 +12,9 @@
     "build:web": "vite build",
     "build": "tsc --noEmit && npm run build:headless && npm run build:web",
     "dev": "vite",
-    "play": "vite preview --open",
+    "play": "node dist/play.js",
+    "bench": "node scripts/bench.mjs",
+    "soak": "node --expose-gc dist/soak.js",
     "test": "npm run build:headless && vitest run",
     "verify": "node scripts/verify.mjs",
     "headless": "node dist/headless.js"

@@ -8,7 +8,9 @@ Small 3D game (TypeScript + Three.js) with a deterministic headless mode that is
 - `npm test` — build headless + Vitest (unit, CLI, architecture guards)
 - `npm run verify` — build + tests + every `tests/scenarios/*` run twice; writes `docs/proof/verify-latest.md`
 - `node dist/headless.js --seed 1 --night 1|2|3 --ticks 600 --out out/a.jsonl [--scenario f.json] [--inputs f.json]`
-- `npm run play` — serve the web build (Three.js view)
+- `npm run play` — launcher: serve `dist/web` + on-disk leaderboard API (`node dist/play.js [--no-open] [--export-leaderboard out.json]`)
+- `npm run bench` — `node scripts/bench.mjs --seed 42 --duration 30 --out bench.json` (opens the installed Chrome; web bench scene, `?bench=1`)
+- `npm run soak` — `node --expose-gc dist/soak.js --seed 7 --nights 10 --out soak.json` (10 headless nights in one process)
 
 ## Architecture rules (enforced by `tests/guards/architecture.test.ts`)
 - `src/core/**` is pure TypeScript: no `three`, DOM, `fs`, no imports from `src/web`/`src/extras`/`src/headless`,

@@ -1,5 +1,26 @@
 # Changelog
 
+## [phase-4] Contract v1.3
+
+Benchmark, soak test, launcher kèm bảng xếp hạng lưu trên đĩa (kế hoạch `docs/plans/06-phase4-bench-soak-launcher.md`). Màn hình Bảng xếp hạng, đổi phím và accessibility thuộc Plan 07. Đêm 1–3 và đầu ra headless không đổi một byte (`tests/guards/night1-golden.test.ts` vẫn 5/5).
+
+### Thêm
+- `game.contract.json`: `contract_version` `"1.3"`, `bench_cmd` (`node scripts/bench.mjs`), `soak_cmd` (`node --expose-gc dist/soak.js`); `run_cmd` đổi từ `npm run play` thành `node dist/play.js` (bộ chấm gắn thêm cờ `--export-leaderboard`, mà npm sẽ nuốt cờ nếu thiếu `--`). Tuning không đổi.
+- Lõi: `createGame({ bench: true })` (chỉ Đêm 1, mặc định tắt): đèn L1–L3 sáng đầy dầu, đúng 200 Bóng Mực `wander` và 100 đom đóm rải đều trên đảo (luồng `bench`, tránh vùng an toàn), tắt sinh thực thể, sát thương, nhặt, hao và hút dầu, đồng hồ và điều kiện kết thúc Đêm.
+- Soak: `node --expose-gc dist/soak.js --seed 7 --nights 10 --out soak.json [--verbose]` chạy N Đêm liên tiếp trong một tiến trình (Đêm 1 → 2 → 3 xoay vòng, Đêm i dùng seed + i), input ngẫu nhiên theo seed, ghi `nights`, `crashes`, `results`, `mem_start_mb`, `mem_end_mb`, `duration_s`.
+- Bảng xếp hạng (`src/leaderboard/board.ts`, thuần, dùng chung cho web và launcher): kiểm tên 3–12 ký tự chữ/số/`_` (có tiếng Việt có dấu), sắp xếp điểm giảm dần rồi ai đạt trước, giữ top 10, ISO 8601 kèm múi giờ.
+- Launcher `node dist/play.js`: máy chủ tĩnh `dist/web` trên 127.0.0.1 (cổng 4173, tự thử tới 4183), mở trình duyệt (`--no-open` để bỏ qua), API `GET/POST /api/leaderboard`, lưu `data/leaderboard.json` (ghi nguyên tử), `--leaderboard-file <file>`, và `--export-leaderboard out.json` (xuất `{"entries": [...]}` đúng thứ tự, không bật máy chủ).
+- Web: chế độ bench `?bench=1&seed=42&duration=30` (`src/web/bench.ts`, thống kê thuần ở `src/web/benchstats.ts`), `renderer.setCamera()` cho camera bay vòng.
+- Bench: `node scripts/bench.mjs --seed 42 --duration 30 --out bench.json` mở Chrome/Chromium/Edge đã cài (không cần thêm phụ thuộc), đo FPS, p1 low, p95, thời gian tải và RSS cao nhất của cây tiến trình trình duyệt.
+- `npm run build:headless` đóng gói thêm `dist/soak.js` và `dist/play.js`; script `npm run play`, `npm run bench`, `npm run soak`.
+
+### Thay đổi
+- `npm run play` không còn là `vite preview` mà chạy launcher (`node dist/play.js`).
+- `src/web/main.ts` chỉ còn chọn chế độ (bench hay game); mã game cũ chuyển nguyên văn sang `src/web/game.ts`.
+
+### Tests updated (phase-4)
+- `tests/unit/tuning.test.ts`: kiểm tra `contract_version` từ `'1.2'` thành `'1.3'`.
+
 ## [phase-2 hoàn thiện] Đêm 2–3 (Contract v1.2 không đổi)
 
 Lõi headless của Ticket-02 phần 2 và 3 (kế hoạch `docs/plans/04-phase2-nights-2-3-core.md`). Phần web (menu, HUD, âm thanh, vẽ Đêm 2–3) thuộc Plan 05. Đêm 1 không đổi một byte (`tests/guards/night1-golden.test.ts`).
@@ -128,3 +149,20 @@ Lõi headless của Ticket-02 phần 2 và 3 (kế hoạch `docs/plans/04-phase2
   - `fall-last-flame: falling with one flame left ends the game (lost, no_flames) with no respawn`: cập nhật sự kiện rơi `{ dropped: 0, lost: carried }`.
   - `win-all-lit: lighting the last lantern wins at once; score adds seconds left and flames left`: lọc bỏ sự kiện `night_start` ở tick 1.
   - `every line of a long run is valid contract JSON (types, key order, 3-decimal coordinates)`: bổ sung danh sách sự kiện mới (`dash`, `charm_picked`, `night_start`, `paused`, `resumed`) và thứ tự khoá snapshot v1.1.
+
+## [phase-1] Contract v1.0 (Đêm 1)
+
+Gameplay Đêm 1 theo `docs/plans/01-phase1-gameplay.md` (kế hoạch) và `docs/spec/contract-v1.0.md`. Chi tiết từng luật: `docs/notes/assumptions.md`, mục "Phase 1 — luật chơi".
+
+### Thêm
+- Lõi mô phỏng thuần (`src/core`) với một hàm `step(input)` chung cho web và headless: 60 tick/giây, 11 giai đoạn cố định mỗi tick, bộ đếm là số nguyên tick, ngẫu nhiên chỉ qua các luồng có nhãn (`motes`, `drops`, `shade_ai`, `spawn`, `shades`).
+- CLI headless `node dist/headless.js --seed --night 1 --ticks --out [--scenario] [--inputs] [--snapshot-every]`: ghi JSONL (snapshot, sự kiện, dòng `end`), cùng đầu vào cho đầu ra giống nhau từng byte; mã thoát 0 / 1 (dùng sai lệnh) / 2 (file sai định dạng).
+- Đêm 1 Đảo Bến: đảo tròn bán kính 40, 5 Đèn Lồng Lớn, 20 đốm sáng ban đầu, đốm mới mỗi 240 tick (tối đa 30).
+- Mây: đi, nhảy, rơi khỏi đảo (mất 1 ngọn lửa và hết đốm, hồi sinh sau 60 tick); nhặt đốm sáng, nạp đèn (10 đốm thắp một đèn), pulse (tốn 3 đốm, bán kính 5 m, choáng 2 s, hồi 3 s).
+- Bóng Mực: sinh tại tick 300 (2 con) rồi mỗi 480 tick (tối đa 6), lang thang, đuổi, chạm thì mất 1 ngọn lửa và rơi nửa số đốm; vùng an toàn bán kính 6 m quanh đèn sáng.
+- Điểm theo `tuning.score`; kết thúc: hết ngọn lửa thì thua, thắp hết đèn thì thắng, hết giờ thì thua; Test Contract v1.0 (`game.contract.json`, mọi số tuning ở một nơi).
+- Web (Three.js, Vite): cảnh Đêm 1, HUD cơ bản, chơi lại bằng R; kiểm tra kiến trúc (`tests/guards/architecture.test.ts`) và so khớp byte Đêm 1 với `tests/golden/`.
+- `npm run verify`: build + test + chạy mọi kịch bản `tests/scenarios/*` hai lần và so từng byte, ghi `docs/proof/`.
+
+### Ghi chú
+- Phase 1 chưa có lướt, tạm dừng, Bùa Gió, Đêm 2–3 (xem phase-2); bản v1.0 chưa có trường `night`, `wind`, `drifters`, `charms` trong snapshot.

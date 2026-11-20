@@ -28,6 +28,7 @@ import {
   Object3D,
   Vector3,
   WebGLRenderer,
+  REVISION,
 } from 'three';
 import { ISLAND_RADIUS } from '../core/level';
 import { getLevel } from '../core/levels';
@@ -334,6 +335,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   const shadeRimGeometry = new SphereGeometry(0.82, 16, 16);
 
   const camera = new PerspectiveCamera(60, 1, 0.1, 400);
+  /** Bench only: when set, render() uses this camera instead of following Mây. */
+  let cameraOverride: { pos: Vec3; target: Vec3 } | null = null;
 
   function resize(): void {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -541,6 +544,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       }
     },
 
+    /** Bench only: fix the camera at `pos` looking at `target` (the follow camera is skipped). */
+    setCamera(pos: Vec3, target: Vec3): void {
+      cameraOverride = { pos, target };
+    },
+
+    /** "<unmasked WebGL renderer> | three.js r<REVISION>" for the bench report. */
+    describe(): string {
+      const gl = renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      return `${gpu} | three.js r${REVISION}`;
+    },
+
     /** `camYawDeg` uses the contract convention: the camera looks along (sin yaw, 0, cos yaw). */
     render(state: GameState, camYawDeg: number, timeS: number): void {
       const p = state.player;
@@ -678,14 +694,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       ambientNow += (ambientTarget - ambientNow) * Math.min(1, dt * AMBIENT_LERP);
       ambient.intensity = ambientNow;
 
-      // Third-person camera behind the player.
-      const yaw = (camYawDeg * Math.PI) / 180;
-      camera.position.set(
-        p.pos[0] - Math.sin(yaw) * CAMERA_DISTANCE,
-        p.pos[1] + CAMERA_HEIGHT,
-        p.pos[2] - Math.cos(yaw) * CAMERA_DISTANCE,
-      );
-      camera.lookAt(p.pos[0], p.pos[1] + 1.2, p.pos[2]);
+      if (cameraOverride) {
+        camera.position.set(cameraOverride.pos[0], cameraOverride.pos[1], cameraOverride.pos[2]);
+        camera.lookAt(cameraOverride.target[0], cameraOverride.target[1], cameraOverride.target[2]);
+      } else {
+        // Third-person camera behind the player.
+        const yaw = (camYawDeg * Math.PI) / 180;
+        camera.position.set(
+          p.pos[0] - Math.sin(yaw) * CAMERA_DISTANCE,
+          p.pos[1] + CAMERA_HEIGHT,
+          p.pos[2] - Math.cos(yaw) * CAMERA_DISTANCE,
+        );
+        camera.lookAt(p.pos[0], p.pos[1] + 1.2, p.pos[2]);
+      }
 
       renderer.render(scene, camera);
     },

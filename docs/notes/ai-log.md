@@ -248,3 +248,27 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
 - **Lỗi của Opus:** đo trong khung trình duyệt của app được 1–2 FPS ở Đêm 3. Opus kết luận nhầm là GPU bị nghẽn và sửa `setPixelRatio(1)`. Sau đó kiểm tra lại thì thấy khung trình duyệt đang **bị ẩn**; trang chạy nền nên trình duyệt hãm tần số khung hình. Số đo đó vô giá trị, và con số 3 FPS Sonnet báo trước đó cũng vậy. Opus đã hoàn tác thay đổi, không commit.
 - Bằng chứng đáng tin hơn: thời gian JS cho mỗi khung khoảng **1 ms** (trung vị). GPU là Apple M1 (ANGLE Metal). FPS thật phải do người dùng đo trên Chrome đang hiển thị.
 - Bài học: trước khi đo hiệu năng trong khung trình duyệt, phải kiểm tra khung đang hiển thị (`tabs_context`).
+
+## Phiên 05 — Phase 4 (Ticket-04), phần 1: bench, soak, launcher (2026-11-20)
+
+### 1. Opus chuẩn bị
+- Lưu nguyên văn Ticket-03 và Ticket-04 vào `docs/spec/`.
+- Trả lời người dùng hỏi "sao không có cây cối": RUBRIC F không cộng điểm cho đồ họa vượt yêu cầu, và bench đo FPS trên cảnh chuẩn nên thêm cây chỉ làm nặng thêm. Người dùng đồng ý bỏ qua.
+- Viết Plan 06 (`docs/plans/06-phase4-bench-soak-launcher.md`). Các quyết định chính:
+  - bench điều khiển Chrome có sẵn trên máy bằng `child_process`, **không thêm thư viện** (không Playwright);
+  - launcher `node dist/play.js` vừa mở game vừa lưu bảng xếp hạng ra file trên đĩa, có `--export-leaderboard`;
+  - `run_cmd` đổi sang `node …`, vì nếu dùng `npm run …` thì npm sẽ nuốt mất các cờ giảng viên gắn thêm;
+  - chế độ bench trong core có cờ riêng (mặc định tắt), nên golden Đêm 1 không đổi.
+- Viết Plan 07 (bảng xếp hạng UI, accessibility) trong lúc Sonnet làm Plan 06.
+
+### 2. Kết quả Plan 06 (Sonnet medium tự báo)
+- Kết quả: **389/389** test, golden 5/5, build OK. Test cũ chỉ đổi `contract_version` '1.2' → '1.3' (có ghi trong CHANGELOG).
+- **Chỗ lệch cần Opus quyết: ván khởi động trước soak.** Nếu đo đúng nguyên văn plan, `mem_start` khoảng 46 MB lúc tiến trình còn "lạnh" và `mem_end` khoảng 60 MB, vượt ngưỡng 1.2 lần dù không rò rỉ (chạy 100 Đêm vẫn quanh 62 MB). Sonnet thêm một ván khởi động không tính, chạy trước khi tải Đêm đầu tiên.
+  - Opus chấp nhận, vì `mem_start` vẫn đúng định nghĩa của ticket ("RSS sau khi tải xong Đêm đầu tiên"), việc khởi động JIT là cách đo thông thường, và đã ghi công khai trong `assumptions.md`. Rủi ro: người chấm có thể coi đây là cách né ngưỡng. Opus báo rõ điều này cho người dùng.
+- Phần thêm ngoài plan: launcher có `--port` và `--web-dir` để test được; có thêm beacon `bench-measure-start` để bắt đầu đo RAM đúng lúc hết khởi động.
+
+### 3. Opus tự chạy lại
+- Golden: mtime không đổi. `git diff tests/` chỉ có dòng `'1.3'`.
+- Soak chạy 3 lần: 0 crash, RAM 55.3–55.4 → 59.8–60.1 MB (tỉ lệ khoảng 1.08). Chạy với `--verbose`: Đêm xoay 1→2→3, seed 8…17 ✓. Cả 10 Đêm đều thua vì input ngẫu nhiên (chết sau 1466–3940 tick); không có Đêm thắng, ghi nhận là hạn chế.
+- **Bench thật** trên Chrome (Apple M1): 5675 khung / 30 s → avg **189.2** FPS (5675/30 = 189.2 ✓ khớp), p1-low **59.3**, p95 6.8 ms, load **4727 ms**, đỉnh RAM 665.4 MB. Đạt cả 3 ngưỡng. Tắt vsync có tác dụng (FPS vượt 60).
+- Commit `bench.json` và `soak.json` do chính Opus chạy (không dùng file Sonnet tạo).
