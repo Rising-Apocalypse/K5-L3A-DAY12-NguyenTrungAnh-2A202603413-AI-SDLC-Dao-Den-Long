@@ -77,7 +77,7 @@ describe('headless output', () => {
     const { lines } = run(['--inputs', inputs], { ticks: 100 });
     const snap = snapshots(lines)[3];
     expect(Object.keys(snap)).toEqual([
-      'type', 'tick', 'sim_tick', 'state', 'time_left_s', 'score', 'player', 'lanterns', 'shades', 'motes_active', 'motes',
+      'type', 'tick', 'sim_tick', 'night', 'state', 'time_left_s', 'score', 'wind', 'player', 'lanterns', 'shades', 'motes_active', 'motes', 'drifters', 'charms',
     ]);
     expect(snap.tick).toBe(30);
     expect(snap.sim_tick).toBe(30);
@@ -98,7 +98,7 @@ describe('headless output', () => {
     const { result, lines } = run(['--scenario', join(SAMPLE, 'scenario.json'), '--inputs', join(SAMPLE, 'inputs.json')], { seed: 7, ticks: 300 });
     expect(result.status).toBe(0);
     const first = lines[0];
-    expect(first.motes).toEqual([{ id: 'M1', pos: [0, 0, 5] }]);
+    expect(first.motes).toEqual([{ id: 'M1', pos: [0, 0, 5], kind: 'random', ttl_s: null }]);
     expect(first.shades).toEqual([{ id: 'S1', pos: [10, 0, 0], state: 'wander' }]);
     expect(first.lanterns[0]).toEqual({ id: 'L1', pos: [0, 0, 25], lit: false, deposited: 0 });
     expect(first.time_left_s).toBe(300);
@@ -113,7 +113,7 @@ describe('headless output', () => {
   it('building a scenario writes no event lines (even with a pre-lit lantern)', () => {
     const scenario = writeJson('lit.json', { lanterns: [{ id: 'L2', lit: true, deposited: 10 }] });
     const { lines } = run(['--scenario', scenario], { ticks: 50 });
-    expect(lines.filter((l) => l.type === 'event')).toEqual([]);
+    expect(lines.filter((l) => l.type === 'event' && l.name !== 'night_start')).toEqual([]);
     expect(lines.at(-1).score).toBe(0);
   });
 

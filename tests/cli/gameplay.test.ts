@@ -4,8 +4,12 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { MOTE_SPAWN_POINTS, SHADE_SPAWN_POINTS } from '../../src/core/level';
 import {
+  CHARM_RESPAWN_TICKS,
+  CHARM_RUN_SPEED,
+  CHARM_TICKS,
   DROP_RING_MAX,
   DROP_RING_MIN,
+  DROP_TTL,
   EVICT_MAX_TICKS,
   FALL_WAIT_TICKS,
   FALL_Y,
@@ -67,7 +71,7 @@ describe('pickup', () => {
     expect(over.length).toBeGreaterThan(5);
     for (const s of over) {
       expect(s.player.carried).toBe(TUNING.carry_capacity);
-      expect(s.motes).toEqual([{ id: 'M2', pos: scenario.motes[1] }]);
+      expect(s.motes).toEqual([{ id: 'M2', pos: scenario.motes[1], kind: 'random', ttl_s: null }]);
     }
     expect(r.snapshots.at(-1)!.motes_active).toBe(1);
   });
@@ -93,7 +97,7 @@ describe('deposit', () => {
     const r = run.fixture('deposit-light', { ticks: 30 });
     const carried = run.load('deposit-light', 'scenario.json').player.carried as number;
     const amount = Math.min(carried, TUNING.lantern_cost);
-    expect(r.events.map((e) => [e.tick, e.name, e.data])).toEqual([
+    expect(r.events.filter((e) => e.name !== 'night_start').map((e) => [e.tick, e.name, e.data])).toEqual([
       [1, 'deposit', { lantern_id: 'L1', amount, deposited: amount }],
       [1, 'lantern_lit', { lantern_id: 'L1' }],
     ]);
@@ -316,7 +320,7 @@ describe('falling', () => {
 
     const falls = r.named('player_hit');
     expect(falls).toHaveLength(1); // once per fall
-    expect(falls[0]!.data).toEqual({ by: 'fall', flames: flames - 1, dropped: carried }); // v1.0: dropped = motes lost
+    expect(falls[0]!.data).toEqual({ by: 'fall', flames: flames - 1, dropped: 0, lost: carried });
     const T = falls[0]!.tick;
     // (Coordinates are rounded to 3 decimals, so "below FALL_Y" can show up as exactly FALL_Y in the output.)
     expect(r.at(T - 1).player.pos[1]).toBeGreaterThan(FALL_Y);
@@ -328,7 +332,7 @@ describe('falling', () => {
     // Frozen for FALL_WAIT_TICKS, then back on the island at the start with velocity 0.
     for (let t = T; t < T + FALL_WAIT_TICKS; t++) expect(r.at(t).player.pos, `tick ${t}`).toEqual(r.at(T).player.pos);
     for (let t = T + FALL_WAIT_TICKS; t <= 400; t++) expect(r.at(t).player.pos, `tick ${t}`).toEqual([0, 0, 0]);
-    expect(r.at(400).player).toEqual({ pos: [0, 0, 0], flames: flames - 1, carried: 0 });
+    expect(r.at(400).player).toMatchObject({ pos: [0, 0, 0], flames: flames - 1, carried: 0 });
     expect(r.end).toEqual({ type: 'end', ticks: 400, state: 'playing', score: 0 });
     expect(r.named('game_over')).toEqual([]);
   });
@@ -337,7 +341,7 @@ describe('falling', () => {
     const r = run.fixture('fall-last-flame', { ticks: 400 });
     const carried = run.load('fall-last-flame', 'scenario.json').player.carried as number;
     const [fall] = r.named('player_hit');
-    expect(fall!.data).toEqual({ by: 'fall', flames: 0, dropped: carried });
+    expect(fall!.data).toEqual({ by: 'fall', flames: 0, dropped: 0, lost: carried });
     expect(r.named('game_over')).toEqual([
       { type: 'event', tick: fall!.tick, name: 'game_over', data: { result: 'lost', reason: 'no_flames' } },
     ]);
@@ -357,7 +361,7 @@ describe('ending the night', () => {
     const expectedScore =
       Math.min(carried, TUNING.lantern_cost) * S.per_mote + S.per_lantern + Math.floor(timeLeft) * S.per_second_left + flames * S.per_flame_left;
 
-    expect(r.events.map((e) => [e.tick, e.name, e.data])).toEqual([
+    expect(r.events.filter((e) => e.name !== 'night_start').map((e) => [e.tick, e.name, e.data])).toEqual([
       [1, 'deposit', { lantern_id: 'L1', amount: TUNING.lantern_cost, deposited: TUNING.lantern_cost }],
       [1, 'lantern_lit', { lantern_id: 'L1' }],
       [1, 'game_over', { result: 'won', reason: 'all_lit' }],
@@ -454,19 +458,138 @@ describe('determinism of the whole game', () => {
   it('every line of a long run is valid contract JSON (types, key order, 3-decimal coordinates)', () => {
     const r = run.fixture('determinism', { ticks: 3600, seed: 5, every: 10 });
     expect(r.end.type).toBe('end');
-    const eventNames = new Set(['mote_picked', 'deposit', 'lantern_lit', 'pulse', 'player_hit', 'shade_spawned', 'game_over']);
+    const eventNames = new Set(['mote_picked', 'deposit', 'lantern_lit', 'pulse', 'player_hit', 'shade_spawned', 'game_over', 'dash', 'charm_picked', 'night_start', 'paused', 'resumed']);
     for (const e of r.events) {
       expect(eventNames.has(e.name), e.name).toBe(true);
       expect(Object.keys(e)).toEqual(['type', 'tick', 'name', 'data']);
     }
     const states = new Set(['spawning', 'wander', 'chase', 'recoil', 'stunned']);
     for (const s of r.snapshots) {
-      expect(Object.keys(s)).toEqual(['type', 'tick', 'sim_tick', 'state', 'time_left_s', 'score', 'player', 'lanterns', 'shades', 'motes_active', 'motes']);
+      expect(Object.keys(s)).toEqual([
+        'type', 'tick', 'sim_tick', 'night', 'state', 'time_left_s', 'score', 'wind', 'player', 'lanterns', 'shades', 'motes_active', 'motes', 'drifters', 'charms',
+      ]);
       expect(s.motes_active).toBe(s.motes.length);
       for (const sh of s.shades) expect(states.has(sh.state), sh.state).toBe(true);
       for (const n of [...s.player.pos, ...s.shades.flatMap((x: any) => x.pos), ...s.motes.flatMap((m: any) => m.pos)]) {
         expect(Math.round(n * 1000) / 1000).toBe(n);
       }
     }
+  });
+});
+
+describe('phase 2 (v1.1)', () => {
+  it('dash-ground: dash advances z by dash_speed * dash_duration_s, cooldown blocks next press, re-enables after cd', () => {
+    const r = run.fixture('dash-ground', { ticks: 125 });
+    const dashEvents = r.named('dash');
+    expect(dashEvents.map((e) => e.tick)).toEqual([11, 101]);
+
+    const dashTicks = ticksOf(TUNING.dash_duration_s);
+    const startZ = r.at(10).player.pos[2];
+    const endZ = r.at(10 + dashTicks).player.pos[2];
+    expect(endZ - startZ).toBeCloseTo((TUNING.dash_speed * dashTicks) / 60, 3);
+  });
+
+  it('dash-air: y stays constant during the 12 dash ticks of an airborne dash', () => {
+    const r = run.fixture('dash-air', { ticks: 35 });
+    expect(r.named('dash')).toHaveLength(1);
+    expect(r.named('dash')[0]!.tick).toBe(11);
+
+    const dashTicks = ticksOf(TUNING.dash_duration_s);
+    const airY = r.at(10).player.pos[1];
+    expect(airY).toBeGreaterThan(0);
+    for (let t = 11; t <= 10 + dashTicks; t++) {
+      expect(r.at(t).player.pos[1]).toBeCloseTo(airY, 3);
+    }
+  });
+
+  it('dash-idle-facing: without move input dash moves along facing (+Z initially)', () => {
+    const r = run.fixture('dash-idle-facing', { ticks: 20 });
+    expect(r.named('dash')).toHaveLength(1);
+    expect(r.named('dash')[0]!.tick).toBe(1);
+
+    const dashTicks = ticksOf(TUNING.dash_duration_s);
+    const snap = r.at(dashTicks);
+    expect(snap.player.pos[0]).toBe(0);
+    expect(snap.player.pos[2]).toBeCloseTo((TUNING.dash_speed * dashTicks) / 60, 3);
+  });
+
+  it('pause: pause freezes sim_tick, player position and time_left_s, resumed continues in same tick', () => {
+    const r = run.fixture('pause', { ticks: 100 });
+    expect(r.named('paused')).toEqual([{ type: 'event', tick: 11, name: 'paused', data: {} }]);
+    expect(r.named('resumed')).toEqual([{ type: 'event', tick: 71, name: 'resumed', data: {} }]);
+
+    const pPos = r.at(10).player.pos;
+    for (let t = 11; t <= 70; t++) {
+      const snap = r.at(t);
+      expect(snap.sim_tick).toBe(10);
+      expect(snap.state).toBe('paused');
+      expect(snap.player.pos).toEqual(pPos);
+      expect(snap.time_left_s).toBe(r.at(10).time_left_s);
+    }
+    expect(r.at(71).state).toBe('playing');
+    expect(r.at(71).sim_tick).toBe(11);
+  });
+
+  it('charm: pickup grants charm effect, increased run speed, and zero dash cooldown', () => {
+    const r = run.fixture('charm', { ticks: 185 });
+    const picks = r.named('charm_picked');
+    expect(picks).toHaveLength(1);
+    expect(picks[0]!.data).toEqual({ charm_id: 'C1', charm_ticks: CHARM_TICKS });
+
+    const pickTick = picks[0]!.tick;
+    expect(pickTick).toBe(20);
+    // Over 60 ticks (ticks 20 to 80), displacement is exactly 7.2 m
+    expect(r.at(80).player.pos[2] - r.at(20).player.pos[2]).toBeCloseTo(60 * (CHARM_RUN_SPEED / 60), 3);
+
+    // Both dashes at ticks 130 and 160 emit 'dash' (within 90 ticks cooldown)
+    const dashes = r.named('dash');
+    expect(dashes.map((d) => d.tick)).toEqual([131, 161]);
+
+    const snap = r.at(pickTick);
+    expect(snap.charms[0]!.available).toBe(false);
+    expect(snap.charms[0]!.respawn_s).toBeCloseTo(CHARM_RESPAWN_TICKS / 60, 1);
+  });
+
+  it('fall-lost: fall event reports dropped: 0 and lost: carried', () => {
+    const r = run.fixture('fall-lost', { ticks: 100 });
+    const falls = r.named('player_hit');
+    expect(falls).toHaveLength(1);
+    expect(falls[0]!.data).toEqual({ by: 'fall', flames: 2, dropped: 0, lost: 4 });
+  });
+
+  it('snapshot-v1.1: snapshot contains all v1.1 keys in order, wind, drifters, charm and mote kind/ttl_s', () => {
+    const r = run.fixture('snapshot-v1.1', { ticks: 10 });
+    const snap0 = r.at(0);
+    expect(Object.keys(snap0)).toEqual([
+      'type', 'tick', 'sim_tick', 'night', 'state', 'time_left_s', 'score', 'wind', 'player', 'lanterns', 'shades', 'motes_active', 'motes', 'drifters', 'charms',
+    ]);
+    expect(snap0.wind).toEqual({ active: false, dir_deg: 0 });
+    expect(snap0.drifters).toEqual([]);
+    expect(snap0.motes[0]!.kind).toBe('random');
+    expect(snap0.motes[0]!.ttl_s).toBeNull();
+
+    // After hit at tick 1, dropped motes have kind 'dropped' and ttl_s 8
+    const snap1 = r.at(1);
+    const droppedMote = snap1.motes.find((m: any) => m.kind === 'dropped');
+    expect(droppedMote).toBeDefined();
+    expect(droppedMote.ttl_s).toBeCloseTo(DROP_TTL / 60, 3);
+  });
+
+  it('night-start: first event of any run is night_start at tick 1', () => {
+    const r = run.fixture('night-start', { ticks: 5 });
+    expect(r.events[0]).toEqual({ type: 'event', tick: 1, name: 'night_start', data: { night: 1 } });
+  });
+
+  it('scenario-v1.1: initial shade state and state_ticks_left, player invuln_ticks prevents early hits', () => {
+    const r = run.fixture('scenario-v1.1', { ticks: 70 });
+    for (let t = 0; t < 30; t++) {
+      expect(r.at(t).shades.find((s: any) => s.id === 'S1')!.state).toBe('stunned');
+    }
+    expect(r.at(30).shades.find((s: any) => s.id === 'S1')!.state).not.toBe('stunned');
+
+    // Player invulnerable until tick 60
+    const hits = r.named('player_hit');
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.tick).toBe(60);
   });
 });

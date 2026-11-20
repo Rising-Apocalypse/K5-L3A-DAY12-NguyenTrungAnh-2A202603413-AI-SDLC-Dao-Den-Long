@@ -50,11 +50,13 @@ describe('tick model', () => {
   it('snapshot has the contract key order', () => {
     const snap = createGame({ seed: 1 }).snapshot();
     expect(Object.keys(snap)).toEqual([
-      'type', 'tick', 'sim_tick', 'state', 'time_left_s', 'score', 'player', 'lanterns', 'shades', 'motes_active', 'motes',
+      'type', 'tick', 'sim_tick', 'night', 'state', 'time_left_s', 'score', 'wind', 'player', 'lanterns', 'shades', 'motes_active', 'motes', 'drifters', 'charms',
     ]);
-    expect(Object.keys(snap.player)).toEqual(['pos', 'flames', 'carried']);
+    expect(Object.keys(snap.player)).toEqual([
+      'pos', 'vel', 'grounded', 'flames', 'carried', 'invuln', 'dash_cd_s', 'pulse_cd_s', 'charm_s',
+    ]);
     expect(Object.keys(snap.lanterns[0]!)).toEqual(['id', 'pos', 'lit', 'deposited']);
-    expect(Object.keys(snap.motes[0]!)).toEqual(['id', 'pos']);
+    expect(Object.keys(snap.motes[0]!)).toEqual(['id', 'pos', 'kind', 'ttl_s']);
   });
 
   it('snapshot coordinates are rounded to 3 decimals and never -0', () => {
@@ -236,8 +238,8 @@ describe('level and scenario building', () => {
     expect(createGame({ seed: 1, scenario: parseScenario({ random_motes: false }) }).state.motes).toEqual([]);
     const listed = createGame({ seed: 1, scenario: parseScenario({ motes: [[0, 0, 5], [3, 0, 4]] }) });
     expect(listed.state.motes).toEqual([
-      { id: 'M1', pos: [0, 0, 5], active: true },
-      { id: 'M2', pos: [3, 0, 4], active: true },
+      { id: 'M1', pos: [0, 0, 5], active: true, kind: 'random' },
+      { id: 'M2', pos: [3, 0, 4], active: true, kind: 'random' },
     ]);
     expect(createGame({ seed: 1, scenario: parseScenario({ motes: [] }) }).state.motes).toEqual([]);
   });
@@ -255,7 +257,7 @@ describe('level and scenario building', () => {
     expect(game.state.timeLeftS).toBe(120);
     expect(game.state.player).toMatchObject({ pos: [1, 0, 2], carried: 4, flames: 2 });
     expect(game.snapshot().lanterns[2]).toEqual({ id: 'L3', pos: [14.7, 0, -20.2], lit: true, deposited: 10 });
-    for (let i = 0; i < 30; i++) expect(game.step(idle)).toEqual([]);
+    for (let i = 0; i < 30; i++) expect(game.step(idle).filter((e) => e.name !== 'night_start')).toEqual([]);
     expect(game.state.score).toBe(0);
   });
 

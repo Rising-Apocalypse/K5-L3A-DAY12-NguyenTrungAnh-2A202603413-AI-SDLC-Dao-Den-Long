@@ -12,7 +12,7 @@ describe('tuning', () => {
   });
 
   it('contract fixed keys are present', () => {
-    expect(contract.contract_version).toBe('1.0');
+    expect(contract.contract_version).toBe('1.1');
     for (const key of ['team', 'build_cmd', 'run_cmd', 'headless_cmd']) {
       expect(typeof contract[key]).toBe('string');
     }

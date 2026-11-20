@@ -118,7 +118,7 @@ describe('pickup', () => {
     const game = make({ motes: [[0, 0, 0]] });
     game.state.player.pos[1] = -1;
     game.state.player.fallWaitTicks = 30;
-    expect(run(game, 1)).toEqual([]);
+    expect(run(game, 1).filter((e) => e.name !== 'night_start')).toEqual([]);
     expect(game.state.motes[0]!.active).toBe(true);
   });
 });
@@ -133,7 +133,7 @@ describe('deposit', () => {
   it('a partly filled lantern takes only what is missing (lantern_cost - deposited), then lights', () => {
     const missing = 4;
     const game = make(lanternScene({ lanterns: [{ id: 'L1', pos: [0, 0, 25], deposited: TUNING.lantern_cost - missing }] }));
-    const events = game.step(input({ interact: true }));
+    const events = game.step(input({ interact: true })).filter((e) => e.name !== 'night_start');
     expect(events).toEqual([
       { name: 'deposit', data: { lantern_id: 'L1', amount: missing, deposited: TUNING.lantern_cost } },
       { name: 'lantern_lit', data: { lantern_id: 'L1' } },
@@ -159,8 +159,8 @@ describe('deposit', () => {
       return game.step(input({ interact: true }));
     };
     expect(named(at(TUNING.interact_radius), 'deposit')).toHaveLength(1);
-    expect(at(TUNING.interact_radius + 0.01)).toEqual([]);
-    expect(at(1, 0)).toEqual([]); // amount 0 -> no event
+    expect(at(TUNING.interact_radius + 0.01).filter((e) => e.name !== 'night_start')).toEqual([]);
+    expect(at(1, 0).filter((e) => e.name !== 'night_start')).toEqual([]); // amount 0 -> no event
   });
 
   it('goes to the nearest unlit lantern in reach; lit lanterns are skipped', () => {
@@ -180,7 +180,7 @@ describe('deposit', () => {
   it('is not possible while waiting to respawn', () => {
     const game = make(lanternScene());
     game.state.player.fallWaitTicks = 30;
-    expect(game.step(input({ interact: true }))).toEqual([]);
+    expect(game.step(input({ interact: true })).filter((e) => e.name !== 'night_start')).toEqual([]);
     expect(game.state.player.carried).toBe(TUNING.carry_capacity);
   });
 });
@@ -213,7 +213,7 @@ describe('pulse', () => {
 
   it('an empty pulse still costs the motes and starts the cooldown, with an empty stunned_ids list', () => {
     const game = pulseScene([]);
-    expect(game.step(input({ pulse: true }))).toEqual([{ name: 'pulse', data: { stunned_ids: [] } }]);
+    expect(game.step(input({ pulse: true })).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'pulse', data: { stunned_ids: [] } }]);
     expect(game.state.player.carried).toBe(9 - TUNING.pulse_cost);
     expect(game.state.player.pulseCooldownTicks).toBe(Math.round(TUNING.pulse_cooldown_s * 60));
   });
@@ -285,7 +285,7 @@ describe('pulse', () => {
 
     const waiting = pulseScene([{ id: 'S1', pos: [0, 0, 3] }]);
     waiting.state.player.fallWaitTicks = 20;
-    expect(waiting.step(input({ pulse: true }))).toEqual([]);
+    expect(waiting.step(input({ pulse: true })).filter((e) => e.name !== 'night_start')).toEqual([]);
     expect(waiting.state.player.carried).toBe(9);
   });
 
@@ -525,7 +525,7 @@ describe('falling', () => {
     game.state.player.invulnTicks = 500; // no protection from falling
     const events = run(game, 200, input({ move: [1, 0] })); // keeps pushing +X, also after the respawn at the centre
     expect(named(events, 'player_hit')).toEqual([
-      { name: 'player_hit', data: { by: 'fall', flames: TUNING.flames - 1, dropped: 5 } },
+      { name: 'player_hit', data: { by: 'fall', flames: TUNING.flames - 1, dropped: 0, lost: 5 } },
     ]);
     expect(game.state.player.carried).toBe(0);
     expect(game.state.player.flames).toBe(TUNING.flames - 1);
@@ -559,7 +559,7 @@ describe('falling', () => {
       tuning: { ...TUNING, fall_enabled: false },
       scenario: parseScenario({ ...quiet, ...edge }),
     });
-    const events = run(game, 300, input({ move: [1, 0] }));
+    const events = run(game, 300, input({ move: [1, 0] })).filter((e) => e.name !== 'night_start');
     expect(events).toEqual([]);
     expect(game.state.player.pos[0]).toBeCloseTo(ISLAND_RADIUS, 9);
     expect(game.state.player.pos[1]).toBe(0);
@@ -579,7 +579,7 @@ describe('ending the night', () => {
 
   it('no_flames is checked before all_lit: with no flames left and every lantern lit, the night is lost', () => {
     const game = make({ player: { flames: 0 }, lanterns: [1, 2, 3, 4, 5].map((n) => ({ id: `L${n}`, lit: true })) });
-    expect(game.step(idle)).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'no_flames' } }]);
+    expect(game.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'no_flames' } }]);
     expect(game.state.state).toBe('lost');
     expect(game.state.score).toBe(0); // no win bonus
   });
@@ -609,11 +609,11 @@ describe('ending the night', () => {
 
   it('a game that starts with 0 flames, 0 seconds or all lanterns lit ends at the first step', () => {
     const noFlames = make({ player: { flames: 0 } });
-    expect(noFlames.step(idle)).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'no_flames' } }]);
+    expect(noFlames.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'no_flames' } }]);
     const noTime = make({ time_left_s: 0 });
-    expect(noTime.step(idle)).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'dawn' } }]);
+    expect(noTime.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'dawn' } }]);
     const allLit = make({ lanterns: [1, 2, 3, 4, 5].map((n) => ({ id: `L${n}`, lit: true })), time_left_s: 10 });
-    expect(allLit.step(idle)).toEqual([{ name: 'game_over', data: { result: 'won', reason: 'all_lit' } }]);
+    expect(allLit.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'won', reason: 'all_lit' } }]);
     expect(allLit.state.score).toBe(Math.floor(10 - 1 / 60) * S.per_second_left + TUNING.flames * S.per_flame_left); // pre-lit: no per_lantern
   });
 
