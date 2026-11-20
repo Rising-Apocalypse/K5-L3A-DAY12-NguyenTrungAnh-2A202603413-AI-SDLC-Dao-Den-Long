@@ -242,3 +242,9 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
   - mở game trong trình duyệt và xem tận mắt: menu, Chọn Đêm, màn giới thiệu Đêm 1 (đúng lời thoại, đúng "4 phút · cần 3/5"), Đêm 2 (04:30, "0/6 · cần 4"), menu tạm dừng, Đêm 3 (05:00, "0/7 · cần 5", có tầng, dốc và tháp). Console không có lỗi.
 - **Chưa đo được FPS:** khung trình duyệt trong app vẽ bằng phần mềm (khoảng 3 FPS), nên không phản ánh máy thật. Cần đo bằng `?fps=1` trên Chrome của người dùng.
 - Chưa nghe thử âm thanh và chưa chơi trọn chuỗi 3 Đêm tới Bình Minh. Phần chuyển màn được unit test kiểm tra.
+
+### 6. Bộ đếm FPS bị che, và một lần Opus đo sai
+- Người dùng mở `?fps=1` nhưng không thấy số: `#fps` nằm ở góc dưới phải, không có z-index nên bị lớp màn hình/HUD che. Đã sửa: chuyển lên góc trên trái và đặt z-index 1000.
+- **Lỗi của Opus:** đo trong khung trình duyệt của app được 1–2 FPS ở Đêm 3. Opus kết luận nhầm là GPU bị nghẽn và sửa `setPixelRatio(1)`. Sau đó kiểm tra lại thì thấy khung trình duyệt đang **bị ẩn**; trang chạy nền nên trình duyệt hãm tần số khung hình. Số đo đó vô giá trị, và con số 3 FPS Sonnet báo trước đó cũng vậy. Opus đã hoàn tác thay đổi, không commit.
+- Bằng chứng đáng tin hơn: thời gian JS cho mỗi khung khoảng **1 ms** (trung vị). GPU là Apple M1 (ANGLE Metal). FPS thật phải do người dùng đo trên Chrome đang hiển thị.
+- Bài học: trước khi đo hiệu năng trong khung trình duyệt, phải kiểm tra khung đang hiển thị (`tabs_context`).
