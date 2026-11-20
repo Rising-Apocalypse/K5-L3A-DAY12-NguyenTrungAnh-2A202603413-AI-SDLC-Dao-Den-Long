@@ -115,3 +115,13 @@ Không khoá nào là `null`: game dùng đủ mọi khái niệm của contract
 - **Web — ánh sáng nền:** `0.15 + 0.55·lit/total`; bảng màu theo plan 01.
 - **Web — hiệu ứng:** Mây nhấp nháy khi bất tử, màn hình loé đỏ khi bị đánh, Bóng Mực choáng chuyển màu xám; đốm rơi nhấp nháy trong giây cuối.
 - **Web — HUD và kết thúc:** gợi ý "E — Nạp ánh sáng (x/10)" khi có đèn chưa sáng trong tầm; bảng thắng/thua hiện điểm cuối và "R — Chơi lại".
+
+## Phase 2 — Contract v1.1
+
+- **`invuln` là boolean:** `player.invuln` trong snapshot là boolean (`invulnTicks > 0`).
+- **`ttl_s: null` cho đốm ngẫu nhiên:** `motes[].ttl_s` là `null` với đốm ngẫu nhiên (`kind: "random"`), chỉ đốm rơi (`kind: "dropped"`) mới có số giây còn lại.
+- **`night_start` ở tick 1:** sự kiện `night_start { night: 1 }` được phát ra ngay bước đầu tiên (tick 1), trước mọi sự kiện khác (kể cả khi bị tạm dừng ở bước 1).
+- **Xử lý cạnh tạm dừng:** phím `pause` nhận cạnh lên (false → true) để bật/tắt; khi dừng thì `tick` vẫn tăng nhưng `simTick`, vị trí và `time_left_s` đứng yên; khi mở lại thì tiếp tục mô phỏng ngay trong tick đó.
+- **Hướng lướt và quy tắc trên không:** hướng lướt lấy theo hướng di chuyển thế giới chuẩn hoá nếu có, ngược lại theo `facing`; trong 12 tick lướt thì vận tốc thẳng đứng = 0 và không chịu trọng lực.
+- **Trường kịch bản bùa:** `charms` trong scenario thay thế danh sách bùa mặc định (Đêm 1 mặc định không có bùa); gồm `id` duy nhất, `pos`, `available` (mặc định true) và `respawn_ticks` (mặc định 0).
+- **Gió Lạc được parse nhưng không mô phỏng:** `drifters` được kiểm tra định dạng mảng các vật thể có `pos` Vec3 và bỏ qua, không mô phỏng trong Đêm 1; snapshot luôn trả về `drifters: []`.

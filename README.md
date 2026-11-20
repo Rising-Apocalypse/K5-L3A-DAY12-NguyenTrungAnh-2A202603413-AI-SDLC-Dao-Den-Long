@@ -29,12 +29,19 @@ Cần Node.js 20 trở lên (đã thử trên Node 24). Có thể chọn seed: `
 |---|---|
 | W A S D / phím mũi tên | Di chuyển (theo hướng camera) |
 | Space | Nhảy |
+| Shift | Lướt (dash) |
 | E | Tương tác (nạp ánh sáng vào đèn lồng) |
 | F | Toả sáng (pulse) |
+| P / Esc | Tạm dừng |
 | `[` `]` hoặc kéo chuột | Xoay camera |
 | R | Chơi lại |
 
 (Plan gốc ghi Q/E để xoay camera, nhưng E đã dùng cho tương tác nên camera dùng `[` `]` và kéo chuột.)
+
+## Phạm vi Phase 2
+
+Phase 2 triển khai lõi headless của Contract v1.1 cho Đêm 1: lướt (dash), tạm dừng (pause), Bùa Gió (wind charm), sự kiện `night_start`, sự kiện rơi đổi sang `lost`, và định dạng snapshot v1.1.
+Chưa làm (chưa đạt trong phase này): Đêm 2 và Đêm 3 (tiếp tục báo lỗi mã 1), hành vi và mô phỏng Gió Lạc (drifters), gió môi trường, bục nhảy, cầu, tầng, menu/cài đặt/âm thanh/HUD đầy đủ/chế độ hỗ trợ mù màu.
 
 ## Chế độ headless
 

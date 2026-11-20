@@ -126,3 +126,40 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
 - Chia thành 8 commit theo nhóm (spec/plan → tooling → harness → headless → core → web → test → docs). Code được viết cùng một lượt nên các commit trung gian không build riêng được; mỗi commit chỉ gom các file cùng một mảng.
 - Chạy `npm run verify` trên cây sạch tại commit `6633d87` → `docs/proof/*` ghi đúng hash, 213/213 test. Commit proof cùng log này, rồi gắn tag `phase-1` vào commit đó.
 - Chưa push: chưa có remote GitHub.
+
+---
+
+## Phiên 02–03 — Ticket-03 tới khi Phase 2 chưa làm (2026-11-20)
+
+### 1. Tình huống và quyết định của người dùng
+- Người dùng dán Ticket-03 (Phase 3, "Đèn cạn dầu", Contract v1.2) và yêu cầu: "kêu gemini code, ghi thật kĩ, chi tiết làm gì ở file nào, không nó phá code".
+- Opus kiểm tra repo: chỉ có tag `phase-1`, **Phase 2 chưa làm**. Opus hỏi trước khi làm (rút kinh nghiệm từ sự cố đổi hướng ở Phiên 00). Người dùng chọn: **làm phần lõi Phase 2 cho Đêm 1 (tag `phase-2`), rồi Phase 3 (tag `phase-3`)**. Đêm 2–3, Gió Lạc, gió, bục nhảy, menu, cài đặt, âm thanh: ghi "chưa đạt".
+
+### 2. Opus đọc code trước khi viết plan
+- Đọc `types.ts`, `rules.ts`, `level.ts`, `sim.ts` (661 dòng), `scenario.ts`, `tuning.ts`, `args.ts`, helper test. Mục đích: plan chỉ đúng tên hàm, tên field và vị trí cần sửa, để Gemini không phải đoán.
+
+### 3. Plan 02 (`docs/plans/02-phase2-core-v1.1.md`), viết cho Gemini
+- Luật chính xác cho lướt (14 m/s, 12 tick, hồi chiêu 90 tick tính từ lúc bắt đầu, giữ độ cao khi lướt trên không), tạm dừng (chỉ `tick` tăng; snapshot `state: "paused"`), Bùa Gió (600 tick, chạy 7.2 m/s, lướt không hồi chiêu, xuất hiện lại sau 2700 tick), event rơi thêm `lost`, `night_start`.
+- Thứ tự khóa của snapshot v1.1, các field scenario mới.
+- 13 bước sửa theo **từng file và từng hàm**, có danh sách test cũ **được phép** sửa (kèm ghi lý do vào CHANGELOG), 9 scenario test mới, cấm git, cấm sửa các file cấu hình.
+- Giả định Opus chọn: `player.invuln` là boolean; `ttl_s: null` cho đom đóm thường; `night_start` ở tick 1.
+
+### 4. Gọi Gemini qua `agy`
+- `agy -p "<prompt tiếng Anh>" --model gemini-3.8-flash-high --mode auto --print-timeout 0`, chạy nền, log ở scratchpad.
+- `agy` báo "`--mode auto` is not available for this account", nên chạy ở chế độ mặc định. Opus kiểm tra `git status` và thấy Gemini vẫn sửa được file (`game.contract.json`, `tuning.ts`).
+
+### 5. Trong lúc Gemini làm Plan 02
+- Opus viết `docs/plans/03-phase3-fuel-v1.2.md`: nhiên liệu lưu bằng số nguyên đơn vị 1/60 (đầy = 6000); luật thắp, thắp lại, châm dầu, tắt đèn; vùng an toàn chỉ khi fuel ≥ 30; trạng thái `drain`; điểm mới; luật thắng bình minh; sức chứa tăng dần; danh sách test cũ được phép viết lại; 12 scenario test mới; phần web tối thiểu (thanh dầu, nhấp nháy, chế độ mù màu).
+- Opus **tự viết ADR** `docs/adr/0001-lantern-fuel-and-dawn-win.md`, vì đây là quyết định thiết kế, không giao cho agent.
+
+### 6. Kết quả Plan 02 (Gemini tự báo) và Opus review
+- Gemini sửa 23 file (+725/−170), thêm `CHANGELOG.md`, 9 thư mục scenario, `docs/proof/phase-2.md`. Báo cáo không lệch khỏi plan; ghi rõ những file do planner tạo trước đó (ai-log, adr, plans) mà nó không đụng tới.
+- **Review cách sửa test cũ:** `git diff` của các test cũ chỉ gồm 3 loại được plan cho phép (thứ tự khóa snapshot v1.1, `dropped` → `dropped: 0, lost`, lọc `night_start`). Mỗi test đều có dòng lý do trong `CHANGELOG.md`. Không có `.skip`, không có assertion nào bị làm yếu.
+- **Opus chạy lại trên bản sao sạch:** build OK, **238/238** test.
+- **Scenario do Opus tự viết, so với tính tay:**
+  - Lướt khi đứng yên đi theo hướng mặt (+Z), 12 tick × 14/60 = **2.8 m** ✓. Bấm lại ở tick 30 (còn hồi chiêu) → không có event ✓. Tick 90 → `dash` ở tick 91 ✓. `dash_cd_s` = 1.5 ngay lúc bắt đầu ✓.
+  - Lướt trên không: y giữ **0.889** trong 12 tick (11–22), rơi từ tick 23 ✓.
+  - Tạm dừng ở 10, tiếp tục ở 70: `paused`@11, `resumed`@71. Tick 40: `state: "paused"`, `sim_tick` 10, `time_left_s` đứng yên, z = 1.0. Tick 80: `sim_tick` 20, z = 2.0 ✓.
+  - Bùa: `charm_picked {C1, 600}`, chạy **7.2 m** trong 60 tick, `respawn_s` 45 ✓.
+  - Rơi: `{by: fall, flames: 1, dropped: 0, lost: 4}` ✓. Thứ tự khóa snapshot và player đúng §3.2 ✓.
+- Kết luận: **chấp nhận Plan 02**. Số liệu token của Gemini: `agy -p` không in số token, nên không đo được (ghi nhận là hạn chế).
