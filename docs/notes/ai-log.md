@@ -272,3 +272,25 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
 - Soak chạy 3 lần: 0 crash, RAM 55.3–55.4 → 59.8–60.1 MB (tỉ lệ khoảng 1.08). Chạy với `--verbose`: Đêm xoay 1→2→3, seed 8…17 ✓. Cả 10 Đêm đều thua vì input ngẫu nhiên (chết sau 1466–3940 tick); không có Đêm thắng, ghi nhận là hạn chế.
 - **Bench thật** trên Chrome (Apple M1): 5675 khung / 30 s → avg **189.2** FPS (5675/30 = 189.2 ✓ khớp), p1-low **59.3**, p95 6.8 ms, load **4727 ms**, đỉnh RAM 665.4 MB. Đạt cả 3 ngưỡng. Tắt vsync có tác dụng (FPS vượt 60).
 - Commit `bench.json` và `soak.json` do chính Opus chạy (không dùng file Sonnet tạo).
+
+## Phiên 06 — Phase 4 phần 2: bảng xếp hạng UI, accessibility, phát hành (2026-11-20)
+
+### 1. Kết quả Plan 07 (Sonnet medium tự báo)
+- Phần đã làm:
+  - bảng xếp hạng: gọi API của launcher, nếu không có thì dùng `localStorage`; nhập tên sau Bình Minh hoặc sau khi thua; màn Bảng xếp hạng ở menu;
+  - đổi phím cho 9 hành động, báo trùng phím, các phím dành riêng không cho đổi, có khôi phục mặc định;
+  - phụ đề và mũi tên chỉ Bóng Mực vừa xuất hiện; giảm chuyển động; mọi cỡ chữ là `calc(N px * var(--ui-scale))` với N ≥ 18.
+- Thêm 41 test. Tổng **430/430**, 389 test cũ không đổi.
+- Chỗ lệch (Opus chấp nhận):
+  - cài đặt mới nằm trong `settingsExt.ts`, vì test cũ khóa đúng hình dạng 3 trường của `settings.ts`;
+  - bỏ ShiftRight để tránh trùng phím ngầm;
+  - "Lưu điểm" là một nút trên màn kết thúc;
+  - `render.ts` không có rung camera nên không có gì phải tắt.
+
+### 2. Opus review
+- `git diff`: không đụng core, headless, soak, play, leaderboard, golden hay test cũ.
+- Lần chạy bench thứ hai trên bản cuối **bị treo** ("no result after 93 s"). Ảnh chụp Chrome headless cho thấy trang bench vẫn vẽ đúng (200 Bóng Mực, 3 đèn sáng), nên code không hỏng. Nguyên nhân: cửa sổ bench bị cửa sổ khác che, Chrome ngừng vẽ. Opus thêm cờ `--disable-backgrounding-occluded-windows` (sửa test cờ tương ứng, ghi CHANGELOG) và chạy lại: avg **191.3** FPS, p1-low **99**, load **2830 ms**. Đạt.
+- Soak trên bản cuối: 0 crash, RAM 61 → 64.3 MB (tỉ lệ 1.05).
+- README: link video trỏ tới asset `demo.mp4` của Release v1.0.0 (người dùng sẽ tải lên); ảnh chụp `docs/media/screenshot.png` (chụp cảnh bench bằng Chrome headless); mô tả cập nhật theo luật hiện tại (thắng lúc bình minh, 3 đảo).
+- Viết `docs/notes/evaluation.md` (đánh giá từng phase) và `docs/notes/retro.md`.
+- Chưa kiểm tra bằng mắt: màn nhập tên sau khi thua, phụ đề trong lúc chơi, bố cục chữ ×1.25. Người dùng nên thử trước khi quay video.

@@ -57,6 +57,7 @@ describe('bench driver: browser lookup', () => {
       '--disable-frame-rate-limit',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
       '--app=http://127.0.0.1:1/?bench=1',
     ]);
     expect(a.join(' ')).not.toMatch(/headless|fullscreen|kiosk/);

@@ -37,6 +37,7 @@ import { TICK_RATE } from '../core/sim';
 import { TUNING } from '../core/tuning';
 import type { CharmState, DrifterState, GameEvent, GameState, ShadeState, Vec3 } from '../core/types';
 import { isColorBlind } from './colorblind';
+import { getSettings } from './prefs';
 
 // Palette of Plan 01.
 const SKY = 0x0e1430;
@@ -61,6 +62,8 @@ const MAY_SCARF = 0xc8102e;
 const GOLD = 0xf2c14e;
 const CHARM_RED = 0xc8102e;
 const DRIFTER = 0x8fa3b8;
+/** Leaf particle speed factor with "Giảm chuyển động" on. */
+const REDUCED_LEAF_SPEED = 0.3;
 const LEAF = 0x9bbd5a;
 const TEAR = 0x15151d;
 const BRIDGE_WOOD = 0x6b4a2f;
@@ -462,7 +465,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     pulses.length = 0;
   }
 
-  function updateLeaves(state: GameState, timeS: number): void {
+  function updateLeaves(state: GameState, realTimeS: number): void {
+    // Reduced motion: leaves drift at 30 % speed.
+    const timeS = getSettings().reducedMotion ? realTimeS * REDUCED_LEAF_SPEED : realTimeS;
     const w = state.wind;
     const n = w.active ? LEAF_MAX : w.warning ? LEAF_MAX >> 1 : 0;
     leafMesh.count = n;
@@ -580,7 +585,13 @@ export function createRenderer(canvas: HTMLCanvasElement) {
           mat.emissiveIntensity = 1.4 * (l.deposited / TUNING.lantern_cost);
         }
         const lowFuel = l.lit && l.fuelUnits < TUNING.low_fuel_threshold * TICK_RATE;
-        const blinkOff = lowFuel && Math.floor(timeS * 2) % 2 === 1; // lantern and bar blink at 1 Hz
+        // Lantern and bar blink at 1 Hz; with reduced motion they stay on and the lamp turns the danger colour instead.
+        const reduced = getSettings().reducedMotion;
+        const blinkOff = lowFuel && !reduced && Math.floor(timeS * 2) % 2 === 1;
+        if (lowFuel && reduced) {
+          mat.color.setHex(isColorBlind() ? FUEL_BAR_LOW_CB : FUEL_BAR_LOW);
+          mat.emissive.setHex(isColorBlind() ? FUEL_BAR_LOW_CB : FUEL_BAR_LOW);
+        }
         view.group.scale.y = l.lit ? 1 : UNLIT_SCALE_Y;
         view.tear.visible = !l.lit; // torn paper only while unlit
         view.lamp.visible = !blinkOff;

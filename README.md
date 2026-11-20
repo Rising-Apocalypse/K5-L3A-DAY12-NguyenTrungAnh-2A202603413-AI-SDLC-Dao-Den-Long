@@ -1,17 +1,20 @@
-> Video demo: (sẽ cập nhật ở Phase 4)
+> **Video demo:** [demo.mp4 trong Release v1.0.0](https://github.com/Rising-Apocalypse/K5-L3A-DAY12-NguyenTrungAnh-2A202603413-AI-SDLC-Dao-Den-Long/releases/download/v1.0.0/demo.mp4) · [trang Release v1.0.0](https://github.com/Rising-Apocalypse/K5-L3A-DAY12-NguyenTrungAnh-2A202603413-AI-SDLC-Dao-Den-Long/releases/tag/v1.0.0)
 
 # Đảo Đèn Lồng (Lantern Island)
 
-Trò chơi 3D nhỏ viết bằng TypeScript + Three.js. Bạn điều khiển **Mây**, cô bé giữ đèn của một hòn đảo giữa biển
-mây. Sương đen đã nuốt hết ánh sáng của đảo: hãy nhặt các đốm sáng (đom đóm), mang về thắp lại **5 Đèn Lồng
-Lớn**, tránh các **Bóng Mực** đang đuổi theo, và toả sáng (pulse) để đẩy chúng ra. Thắp hết đèn là thắng, hết
-ngọn lửa là thua.
+![Cảnh bench: Đêm 1 với 200 Bóng Mực, 3 đèn đang sáng](docs/media/screenshot.png)
 
-Dự án có thêm **chế độ headless** (không cửa sổ, không GPU) chạy cùng một lõi mô phỏng và ghi kết quả ra JSONL
-theo Test Contract v1.0 (`docs/spec/contract-v1.0.md`).
+Trò chơi 3D nhỏ viết bằng TypeScript + Three.js. Bạn điều khiển **Mây**, cô bé giữ đèn trên ba hòn đảo giữa biển
+mây (Đảo Bến, Đảo Cau, Đảo Chuông). Nhặt đom đóm, mang về thắp và châm dầu cho các **Đèn Lồng Lớn**, né
+**Bóng Mực** (chúng hút dầu của đèn yếu) và **Gió Lạc** (chúng cướp đom đóm), dùng Tỏa Sáng để đẩy lùi. Đèn hao
+dầu theo thời gian: thắng khi trời sáng mà còn ít nhất 60% số đèn đang sáng; hết Ngọn Lửa là thua.
 
-> Trạng thái: Phase 1 hoàn tất (Đêm 1 chơi được: nhặt đốm sáng, nạp đèn, Bóng Mực, pulse, thắng/thua, tính điểm).
-> Lõi headless đã có Đêm 1-3, lướt, tạm dừng, gió, Gió Lạc; chưa có trên web (phase sau): menu/âm thanh, chơi Đêm 2-3.
+Cùng một lõi mô phỏng chạy cả bản web lẫn **chế độ headless** theo Test Contract v1.3 (`game.contract.json`),
+kèm bench hiệu năng, soak test, bảng xếp hạng cục bộ và các tùy chọn dễ tiếp cận.
+
+> Trạng thái: hoàn tất 4 phase (tag `phase-1` … `phase-4`). Bằng chứng: `docs/proof/`, số đo tay
+> `docs/proof/manual-measurements.md`, `bench.json`, `soak.json`. Đánh giá từng phase: `docs/notes/evaluation.md`;
+> retro: `docs/notes/retro.md`; nhật ký AI: `docs/notes/ai-log.md`.
 
 ## Yêu cầu hệ thống
 
@@ -22,8 +25,8 @@ theo Test Contract v1.0 (`docs/spec/contract-v1.0.md`).
 ## Cài đặt & chạy (3 lệnh)
 
 ```bash
-git clone <URL-repo-của-bạn>
-cd <thư-mục-repo>
+git clone https://github.com/Rising-Apocalypse/K5-L3A-DAY12-NguyenTrungAnh-2A202603413-AI-SDLC-Dao-Den-Long.git
+cd K5-L3A-DAY12-NguyenTrungAnh-2A202603413-AI-SDLC-Dao-Den-Long
 npm ci && npm run build && npm run play
 ```
 
@@ -31,7 +34,7 @@ npm ci && npm run build && npm run play
 
 ### Bảng xếp hạng (lưu trên đĩa)
 
-Launcher lưu bảng xếp hạng tại `data/leaderboard.json` (cạnh `dist/`; thư mục `data/` tạo khi cần và nằm trong `.gitignore`; đường dẫn in ra khi khởi động). Máy chủ có `GET /api/leaderboard` và `POST /api/leaderboard` (kiểm tra tên 3–12 ký tự chữ/số/`_`, có tiếng Việt có dấu; giữ top 10, điểm giảm dần, hoà thì ai đạt trước đứng trên). Màn hình Bảng xếp hạng trong menu thuộc Plan 07.
+Launcher lưu bảng xếp hạng tại `data/leaderboard.json` (cạnh `dist/`; thư mục `data/` tạo khi cần và nằm trong `.gitignore`; đường dẫn in ra khi khởi động). Máy chủ có `GET /api/leaderboard` và `POST /api/leaderboard` (kiểm tra tên 3–12 ký tự chữ/số/`_`, có tiếng Việt có dấu; giữ top 10, điểm giảm dần, hoà thì ai đạt trước đứng trên). Trên web: menu chính có "Bảng xếp hạng" (top 10); sau màn Bình Minh hoặc sau một Đêm thua, nút "Lưu điểm" cho nhập tên (3–12 ký tự chữ/số/`_`). Web dùng API của launcher; nếu mở trực tiếp thư mục web tĩnh (không có launcher) thì lưu vào `localStorage` của trình duyệt (khoá `dao-den-long.leaderboard.v1`).
 
 Xuất bảng (không bật máy chủ):
 
@@ -57,6 +60,14 @@ node dist/play.js --leaderboard-file khac.json --export-leaderboard out.json   #
 
 Menu chính: Bắt đầu (Đêm 1 → 2 → 3 → màn Bình Minh với tổng điểm), Chọn Đêm (luyện tập), Cài đặt (âm lượng, độ nhạy chuột, bảng màu; lưu lại trong `localStorage`, khoá `dao-den-long.settings.v1`).
 Thêm `?fps=1` vào địa chỉ để hiện bộ đếm FPS (trung bình 2 giây gần nhất). Số đo đã ghi: `docs/proof/manual-measurements.md`.
+
+### Đổi phím, phụ đề, accessibility
+
+Cài đặt (menu chính hoặc menu tạm dừng) có: Âm lượng, Độ nhạy chuột, Bảng màu dễ phân biệt, Phụ đề, Giảm chuyển động, Chữ lớn (×1.25) và mục "Phím điều khiển".
+- Đổi phím: bấm "Đổi" cạnh hành động rồi nhấn phím mới (Esc để huỷ). Phím trùng được báo đỏ trên cả hai dòng ("Trùng phím với …") và có banner; "Khôi phục mặc định" đặt lại chỉ các phím. Esc, R, C, H, `[`, `]` là phím dành riêng và không gán được. Mũi tên và Esc vẫn dùng được như phím phụ khi chưa bị gán cho hành động khác. Mọi thứ được lưu trong `localStorage`.
+- Phụ đề: dòng chữ phía trên thanh đom đóm (tối đa 3 dòng, 3 giây mỗi dòng) cho Bóng Mực xuất hiện (kèm mũi tên đỏ ở mép màn hình), gió sắp thổi, 10 giây cuối, đèn sắp cạn dầu, Gió Lạc cướp đom đóm, đèn tắt.
+- Giảm chuyển động: không chớp đỏ khi bị đánh, đồng hồ không nhấp nháy, đèn sắp cạn dầu đổi màu thay vì nhấp nháy, lá bay chậm lại (web không có rung camera).
+- Cỡ chữ: tối thiểu 18 px ở 1280x720; "Chữ lớn" nhân 1.25.
 
 (Plan gốc ghi Q/E để xoay camera, nhưng E đã dùng cho tương tác nên camera dùng `[` `]` và kéo chuột.)
 

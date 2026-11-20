@@ -79,6 +79,8 @@ export function browserArgs(userDataDir, url) {
     '--disable-frame-rate-limit',
     '--disable-background-timer-throttling',
     '--disable-renderer-backgrounding',
+    // Without this, Chrome stops drawing a window covered by other windows and the bench never finishes.
+    '--disable-backgrounding-occluded-windows',
     `--app=${url}`,
   ];
 }

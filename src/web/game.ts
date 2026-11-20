@@ -4,14 +4,19 @@ import { defaultInput } from '../core/input';
 import { getLevel } from '../core/levels';
 import { createGame, TICK_RATE, type Game } from '../core/sim';
 import { TUNING } from '../core/tuning';
+import type { Entry } from '../leaderboard/board';
 import type { GameEvent, InputState } from '../core/types';
 import { createAudio } from './audio';
 import { toggleColorBlind } from './colorblind';
 import { initialFlow, reduce, totalScore, type FlowAction, type FlowState, type Night } from './flow';
+import { createCues } from './cues';
 import { createHud } from './hud';
 import { FpsMeter } from './hudlogic';
+import { gameCodes, isActionDown } from './keymap';
+import { createLeaderboardStore } from './leaderboardStore';
 import { getSettings, onSettingsChange } from './prefs';
 import { createRenderer } from './render';
+import { makeRunEntry, nightsWon, SubmitGuard } from './runentry';
 import { createScreens } from './screens';
 import { introInfo } from './story';
 
@@ -39,15 +44,29 @@ const renderer = createRenderer(canvas);
 const hud = createHud(TUNING);
 const audio = createAudio();
 const guide = new FireflyGuide();
+const cues = createCues(TUNING.low_fuel_threshold * TICK_RATE);
+const board = createLeaderboardStore({
+  fetchFn: typeof fetch === 'function' ? (fetch as never) : null,
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+});
+const submitGuard = new SubmitGuard();
 const fpsEl = document.getElementById('fps') as HTMLElement;
 const fpsMeter = params.get('fps') === '1' ? new FpsMeter() : null;
 if (fpsMeter) fpsEl.style.display = 'block';
 let fpsShownAt = 0;
 
 audio.setVolume(getSettings().volume);
+hud.setKeys(getSettings().keys);
 onSettingsChange((s) => {
   audio.setVolume(s.volume);
   hud.setColorBlind();
+  hud.setKeys(s.keys);
 });
 
 // --- state ----------------------------------------------------------------------------------------------------
@@ -67,6 +86,7 @@ function startNight(night: Night): void {
   game = createGame({ seed, night, extras: EXTRAS });
   renderer.setNight(night);
   hud.reset();
+  cues.reset(game.state);
   hud.setNight(night, getLevel(night).islandName);
   audio.resetTracking(game.state);
   guide.reset();
@@ -101,18 +121,57 @@ function dispatch(action: FlowAction): void {
       hud.show(true);
       screens.hide();
       break;
-    case 'result': {
-      const [title, sub] = REASON_TEXT[reason ?? (flow.won ? 'dawn_survived' : 'no_flames')];
-      screens.showResult({ night: flow.night, won: flow.won, score: flow.lastScore, title, sub, hasNext: flow.night < 3 });
-      break;
-    }
+    case 'result':
     case 'dawn':
-      screens.showDawn({
-        total: totalScore(flow),
-        wins: ([1, 2, 3] as const).filter((n) => flow.wins[n] !== undefined).map((n) => ({ night: n, score: flow.wins[n] ?? 0 })),
-      });
+      showEnd();
       break;
   }
+}
+
+/** Id of the current run end: each retry / next night / menu bumps the epoch, so one run end saves at most once. */
+const runEndId = (): string => `${flow.epoch}`;
+
+/** Result screen (any night) or Dawn screen, with the "Lưu điểm" button when the run is over. */
+function showEnd(): void {
+  const saved = submitGuard.saved(runEndId());
+  if (flow.screen === 'result') {
+    const [title, sub] = REASON_TEXT[reason ?? (flow.won ? 'dawn_survived' : 'no_flames')];
+    screens.showResult({ night: flow.night, won: flow.won, score: flow.lastScore, title, sub, hasNext: flow.night < 3, canSave: !flow.won, saved });
+  } else if (flow.screen === 'dawn') {
+    screens.showDawn({
+      total: totalScore(flow),
+      wins: ([1, 2, 3] as const).filter((n) => flow.wins[n] !== undefined).map((n) => ({ night: n, score: flow.wins[n] ?? 0 })),
+      saved,
+    });
+  }
+}
+
+function openSave(): void {
+  if (flow.screen !== 'result' && flow.screen !== 'dawn') return;
+  const id = runEndId();
+  if (submitGuard.saved(id)) return;
+  screens.showNameEntry({
+    score: totalScore(flow),
+    nightsWon: nightsWon(flow),
+    submit: async (name) => {
+      if (!submitGuard.begin(id)) return null;
+      try {
+        const entries = await board.add(makeRunEntry(flow, name, seed, new Date()));
+        submitGuard.commit(id);
+        return entries;
+      } catch (e) {
+        submitGuard.release(id);
+        throw e;
+      }
+    },
+    onSkip: showEnd,
+    onSaved: (entries: Entry[], mine: Entry | null) => screens.showBoard(entries, { highlight: mine, backLabel: 'Tiếp tục', onBack: showEnd }),
+  });
+}
+
+async function openBoard(): Promise<void> {
+  const entries = await board.load();
+  if (flow.screen === 'menu') screens.showBoard(entries, { backLabel: 'Quay lại', onBack: () => screens.showMenu() });
 }
 
 const screens = createScreens({
@@ -124,18 +183,18 @@ const screens = createScreens({
   onMenu: () => dispatch({ type: 'menu' }),
   onResume: () => {
     // The core pauses on a rising edge of `pause`: inject it once.
-    latched.add('KeyP');
+    latched.add(getSettings().keys.pause);
   },
+  onShowBoard: () => void openBoard(),
+  onOpenSave: openSave,
 });
 
 // --- keyboard / mouse -------------------------------------------------------------------------------------
-const GAME_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyE', 'KeyF', 'KeyR',
-  'BracketLeft', 'BracketRight', 'ShiftLeft', 'ShiftRight', 'KeyP', 'Escape', 'KeyC', 'KeyH',
-]);
-
 window.addEventListener('keydown', (e) => {
   audio.unlock();
+  // A key is being chosen in the settings, or a name is being typed: the game does not react.
+  if (screens.capturing()) return;
+  if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;
   if (e.code === 'Escape' && screens.settingsOpen()) {
     e.preventDefault();
     screens.closeSettings();
@@ -153,11 +212,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (flow.screen !== 'playing' || screens.settingsOpen()) return;
-  if (!GAME_KEYS.has(e.code)) return;
+  const keys = getSettings().keys;
+  if (!gameCodes(keys).has(e.code)) return;
   e.preventDefault();
   if (e.repeat) return;
-  // While paused only P / Esc count (and the buttons of the pause menu).
-  if (game.state.paused && e.code !== 'KeyP' && e.code !== 'Escape') return;
+  // While paused only the pause key / Esc count (and the buttons of the pause menu).
+  if (game.state.paused && e.code !== keys.pause && e.code !== 'Escape') return;
   held.add(e.code);
   latched.add(e.code);
   if (e.code === 'KeyR') dispatch({ type: 'retry' });
@@ -182,23 +242,25 @@ canvas.addEventListener('pointermove', (e) => {
   if (dragging && flow.screen === 'playing') camYawDeg -= e.movementX * getSettings().sensitivity;
 });
 
-const down = (...codes: string[]) => codes.some((c) => held.has(c) || latched.has(c));
+const isDown = (c: string): boolean => held.has(c) || latched.has(c);
 
-/** Same convention as the contract: yaw 0 -> forward input z = 1 moves along +Z. */
+/** Same convention as the contract: yaw 0 -> forward input z = 1 moves along +Z. Key codes come from the key map. */
 function buildInput(): InputState {
-  const forward = (down('KeyW', 'ArrowUp') ? 1 : 0) - (down('KeyS', 'ArrowDown') ? 1 : 0);
-  const right = (down('KeyD', 'ArrowRight') ? 1 : 0) - (down('KeyA', 'ArrowLeft') ? 1 : 0);
+  const keys = getSettings().keys;
+  const act = (a: Parameters<typeof isActionDown>[1]): boolean => isActionDown(keys, a, isDown);
+  const forward = (act('up') ? 1 : 0) - (act('down') ? 1 : 0);
+  const right = (act('right') ? 1 : 0) - (act('left') ? 1 : 0);
   return {
     ...defaultInput(),
     // In the contract's right-handed, Y-up world the +x axis points to the LEFT of a camera looking along +Z,
     // so "move right on screen" is x = -1.
     move: [-right, forward],
     camYawDeg,
-    jump: down('Space'),
-    interact: down('KeyE'),
-    pulse: down('KeyF'),
-    dash: down('ShiftLeft', 'ShiftRight'),
-    pause: down('KeyP', 'Escape'),
+    jump: act('jump'),
+    interact: act('interact'),
+    pulse: act('pulse'),
+    dash: act('dash'),
+    pause: act('pause'),
   };
 }
 
@@ -224,6 +286,7 @@ function frame(now: number): void {
         audio.onEvents(events);
         for (const ev of events) if (ev.name === 'game_over') reason = ev.data.reason;
       }
+      cues.onStep(events, game.state, timeS);
       latched.clear();
       accumulator -= DT;
       steps++;
@@ -255,6 +318,7 @@ function frame(now: number): void {
   audio.update(game.state, running);
 
   renderer.render(game.state, camYawDeg, timeS);
+  cues.update(game.state, timeS, flow.screen === 'playing' && getSettings().captions, renderer.project, window.innerWidth, window.innerHeight);
   hud.update(game.state, { timeS, guideCooldown: guide.cooldownFraction, project: renderer.project });
 
   if (fpsMeter) {

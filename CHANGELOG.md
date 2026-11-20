@@ -2,7 +2,20 @@
 
 ## [phase-4] Contract v1.3
 
-Benchmark, soak test, launcher kèm bảng xếp hạng lưu trên đĩa (kế hoạch `docs/plans/06-phase4-bench-soak-launcher.md`). Màn hình Bảng xếp hạng, đổi phím và accessibility thuộc Plan 07. Đêm 1–3 và đầu ra headless không đổi một byte (`tests/guards/night1-golden.test.ts` vẫn 5/5).
+Benchmark, soak test, launcher kèm bảng xếp hạng lưu trên đĩa (kế hoạch `docs/plans/06-phase4-bench-soak-launcher.md`). Phần web (màn hình Bảng xếp hạng, đổi phím, phụ đề, accessibility) theo `docs/plans/07-phase4-leaderboard-ui-accessibility.md`. Đêm 1–3 và đầu ra headless không đổi một byte (`tests/guards/night1-golden.test.ts` vẫn 5/5).
+
+### Thêm (web, Plan 07)
+- Bảng xếp hạng trên web: nút "Bảng xếp hạng" ở menu chính (hạng, tên, điểm, số Đêm thắng, thời gian `dd/MM/yyyy HH:mm`, top 10, trạng thái rỗng "Chưa có ai — hãy là người đầu tiên!"). Nút "Lưu điểm" sau màn Bình Minh và sau mọi Đêm thua: nhập tên (kiểm tra ngay bằng `validateName`, Enter để lưu, "Bỏ qua"), mỗi lần kết thúc ván chỉ lưu một lần, rồi hiện bảng với mục mới được tô sáng (`src/web/leaderboardStore.ts`, `src/web/runentry.ts`). Lưu qua API của launcher, nếu không có thì `localStorage` (khoá `dao-den-long.leaderboard.v1`).
+- Đổi phím (`src/web/keymap.ts`): 9 hành động, phát hiện trùng phím (báo đỏ trên cả hai dòng, banner trong Cài đặt), phím dành riêng (Esc, R, C, H, `[`, `]`), "Khôi phục mặc định", lưu cùng các cài đặt khác. `buildInput()` đọc bảng phím; mũi tên và Esc vẫn là phím phụ cố định.
+- Phụ đề và chỉ báo hình ảnh (`src/web/captions.ts`, `src/web/cues.ts`): Bóng Mực xuất hiện (kèm mũi tên ở mép màn hình), gió sắp thổi, 10 giây cuối, đèn sắp cạn dầu (fuel < 30), Gió Lạc cướp đom đóm, đèn tắt. Tối đa 3 dòng, mỗi dòng 3 giây. Cài đặt "Phụ đề" (mặc định bật).
+- Cài đặt "Giảm chuyển động": tắt chớp đỏ khi bị đánh, đồng hồ không nhấp nháy, đèn sắp cạn đổi màu đứng yên thay vì nhấp nháy, lá bay chậm còn 30 %. (Web không có rung camera nên không có gì để tắt ở đó.)
+- Cài đặt "Chữ lớn (×1.25)" (biến CSS `--ui-scale`); mọi chữ UI tối thiểu 18 px ở 1280x720.
+
+### Thay đổi (web, Plan 07)
+- Cooldown Lướt/Toả sáng hiện tên phím theo bảng phím; dòng trợ giúp ngắn lại; Shift phải không còn là phím lướt phụ (tránh trùng ngầm khi đổi phím).
+
+### Tests added (phase-4 web)
+- `tests/unit/web-keymap.test.ts`, `web-settings-ext.test.ts`, `web-leaderboard.test.ts`, `web-captions.test.ts`, `web-fontsize.test.ts`.
 
 ### Thêm
 - `game.contract.json`: `contract_version` `"1.3"`, `bench_cmd` (`node scripts/bench.mjs`), `soak_cmd` (`node --expose-gc dist/soak.js`); `run_cmd` đổi từ `npm run play` thành `node dist/play.js` (bộ chấm gắn thêm cờ `--export-leaderboard`, mà npm sẽ nuốt cờ nếu thiếu `--`). Tuning không đổi.
@@ -20,6 +33,7 @@ Benchmark, soak test, launcher kèm bảng xếp hạng lưu trên đĩa (kế h
 
 ### Tests updated (phase-4)
 - `tests/unit/tuning.test.ts`: kiểm tra `contract_version` từ `'1.2'` thành `'1.3'`.
+- `tests/unit/bench-driver.test.ts` (test mới của chính Phase 4): danh sách cờ Chrome thêm `--disable-backgrounding-occluded-windows`. Không có cờ này, Chrome ngừng vẽ khi cửa sổ bench bị che và bench không xong (lần chạy thứ hai của người review bị treo 93 s).
 
 ## [phase-2 hoàn thiện] Đêm 2–3 (Contract v1.2 không đổi)
 

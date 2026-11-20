@@ -2,6 +2,8 @@ import { TICK_RATE } from '../core/sim';
 import type { Tuning } from '../core/tuning';
 import type { GameEvent, GameState, Vec3 } from '../core/types';
 import { isColorBlind } from './colorblind';
+import { keyLabel, type KeyMap } from './keymap';
+import { getSettings } from './prefs';
 import { blinkOn, carryCapacity, cooldownFraction, edgeArrow, formatClock, isClockDanger, lanternsNeeded, nearestUnlit, promptLantern, type EdgeArrow } from './hudlogic';
 
 const byId = (id: string): HTMLElement => {
@@ -64,6 +66,7 @@ export function createHud(tuning: Tuning) {
   const arrow = byId('arrow');
   const windWarn = byId('wind-warn');
   const flash = byId('flash');
+  const helpEl = byId('help');
 
   const flameIcons: HTMLElement[] = [];
   for (let i = 0; i < tuning.flames; i++) {
@@ -88,6 +91,8 @@ export function createHud(tuning: Tuning) {
   };
   const dash = cd('cd-dash');
   const pulse = cd('cd-pulse');
+  const dashKey = dash.box.querySelector('.key') as HTMLElement;
+  const pulseKey = pulse.box.querySelector('.key') as HTMLElement;
   const guide = cd('cd-guide');
 
   const setClock = cachedText(clock);
@@ -139,10 +144,17 @@ export function createHud(tuning: Tuning) {
       colorBlind = isColorBlind();
     },
 
+    /** Key names on the cooldown icons and the help line follow the key map. */
+    setKeys(keys: Readonly<KeyMap>): void {
+      dashKey.textContent = keyLabel(keys.dash);
+      pulseKey.textContent = keyLabel(keys.pulse);
+      helpEl.textContent = `${keyLabel(keys.pause)} / Esc: tạm dừng · R: chơi lại · C: màu dễ phân biệt · H: đom đóm dẫn đường`;
+    },
+
     /** A hit flashes the screen red. */
     onEvents(events: readonly GameEvent[]): void {
       for (const e of events) {
-        if (e.name === 'player_hit') {
+        if (e.name === 'player_hit' && !getSettings().reducedMotion) {
           flash.classList.remove('on');
           void flash.offsetWidth; // restart the CSS transition
           flash.classList.add('on');
@@ -166,7 +178,7 @@ export function createHud(tuning: Tuning) {
       const danger = isClockDanger(state.timeLeftS);
       setClock(danger && colorBlind ? `⚠ ${formatClock(state.timeLeftS)}` : formatClock(state.timeLeftS));
       clockDanger(danger);
-      clockHide(danger && state.state === 'playing' && !state.paused && !blinkOn(ex.timeS));
+      clockHide(danger && state.state === 'playing' && !state.paused && !getSettings().reducedMotion && !blinkOn(ex.timeS));
 
       const total = state.lanterns.length;
       let lit = 0;

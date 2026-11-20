@@ -11,8 +11,9 @@
         --gold: #f2c14e;
         --danger: #ff5a5f;
         --panel: rgba(14, 20, 48, 0.72);
+        --ui-scale: 1;
       }
-      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); color: var(--text); font-family: system-ui, sans-serif; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); color: var(--text); font-family: system-ui, sans-serif; font-size: calc(18px * var(--ui-scale)); }
       canvas#view { display: block; width: 100vw; height: 100vh; cursor: grab; }
       .panel { background: var(--panel); border-radius: 10px; padding: 6px 12px; font-variant-numeric: tabular-nums; }
       .gold { color: var(--gold); }
@@ -23,57 +24,77 @@
       .flame { width: 14px; height: 20px; background: var(--gold); border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%; box-shadow: 0 0 8px rgba(242, 193, 78, 0.7); }
       .flame.off { background: #3a3f55; box-shadow: none; opacity: 0.6; }
       #hud-flames.low .flame:not(.off) { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
-      #hud-clock { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 700; letter-spacing: 1px; color: var(--text); }
+      #hud-clock { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: calc(30px * var(--ui-scale)); font-weight: 700; letter-spacing: 1px; color: var(--text); }
       #hud-clock.danger { color: var(--danger); }
       #hud-clock.hide { visibility: hidden; }
-      #hud-right { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 16px; }
+      #hud-right { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: calc(18px * var(--ui-scale)); }
       #hud-right b { color: var(--gold); font-weight: 600; }
-      #hud-night { font-size: 13px; opacity: 0.8; }
-      #hud-motes { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; }
+      #hud-night { font-size: calc(18px * var(--ui-scale)); opacity: 0.85; }
+      #hud-motes { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; }
       #hud-motes .slots { display: flex; gap: 4px; }
       .slot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 229, 138, 0.55); box-sizing: border-box; }
       .slot.full { background: #fff6c2; border-color: #ffe58a; box-shadow: 0 0 6px #ffe58a; }
-      #hud-motes .cap { font-size: 12px; opacity: 0.8; }
-      #hud-cds { position: absolute; bottom: 22px; right: 16px; display: flex; gap: 10px; }
-      .cd { position: relative; width: 56px; height: 56px; border-radius: 12px; background: var(--panel); overflow: hidden; text-align: center; border: 2px solid rgba(245, 241, 230, 0.35); box-sizing: border-box; }
+      #hud-motes .cap { font-size: calc(18px * var(--ui-scale)); opacity: 0.9; }
+      #hud-cds { position: absolute; bottom: 16px; right: 16px; display: flex; gap: 10px; }
+      .cd { position: relative; width: 72px; height: 68px; border-radius: 12px; background: var(--panel); overflow: hidden; text-align: center; border: 2px solid rgba(245, 241, 230, 0.35); box-sizing: border-box; }
       .cd .fill { position: absolute; left: 0; right: 0; top: 0; height: 0%; background: rgba(0, 0, 0, 0.62); }
-      .cd .ico { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-      .cd .key { position: absolute; right: 3px; bottom: 1px; font-size: 11px; opacity: 0.9; }
+      .cd .ico { position: absolute; left: 0; right: 0; top: 2px; display: flex; align-items: center; justify-content: center; font-size: calc(22px * var(--ui-scale)); }
+      .cd .key { position: absolute; left: 0; right: 0; bottom: 1px; font-size: calc(18px * var(--ui-scale)); opacity: 0.95; }
       .cd.ready { border-color: var(--gold); }
       .cd.charm { border-color: var(--gold); background: rgba(242, 193, 78, 0.45); box-shadow: 0 0 10px var(--gold); }
       .cd.nomotes { opacity: 0.55; }
-      #prompt { position: fixed; left: 50%; bottom: 20%; transform: translateX(-50%); background: var(--panel); color: var(--gold);
-        padding: 8px 18px; border-radius: 10px; font-size: 18px; pointer-events: none; display: none; }
+      #prompt { position: fixed; left: 50%; bottom: 34%; transform: translateX(-50%); background: var(--panel); color: var(--gold);
+        padding: 8px 18px; border-radius: 10px; font-size: calc(18px * var(--ui-scale)); pointer-events: none; display: none; }
       #arrow { position: fixed; left: 0; top: 0; width: 0; height: 0; display: none; pointer-events: none;
         border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 30px solid var(--gold); margin: -15px 0 0 -14px;
         filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.8)); }
-      #wind-warn { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); color: var(--danger); font-size: 20px; font-weight: 600; display: none; pointer-events: none; text-shadow: 0 2px 8px #000; }
+      #wind-warn { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); color: var(--danger); font-size: calc(20px * var(--ui-scale)); font-weight: 600; display: none; pointer-events: none; text-shadow: 0 2px 8px #000; }
       #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.45s ease-out;
         background: radial-gradient(ellipse at center, rgba(255, 90, 95, 0) 40%, rgba(255, 90, 95, 0.55) 100%); }
       #flash.on { opacity: 1; transition: none; }
-      #fps { position: fixed; top: 44px; left: 12px; z-index: 1000; font: 14px monospace; color: #f5f1e6; background: rgba(14, 20, 48, 0.72);
+      .reduced-motion #flash { display: none; }
+      #captions { position: fixed; left: 50%; bottom: 112px; transform: translateX(-50%); display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; pointer-events: none; max-width: 90vw; }
+      .caption { background: rgba(8, 10, 24, 0.88); color: var(--text); font-size: calc(18px * var(--ui-scale)); padding: 4px 14px; border-radius: 8px; border: 1px solid rgba(245, 241, 230, 0.35); white-space: nowrap; }
+      #shade-arrows { position: fixed; inset: 0; pointer-events: none; }
+      .shade-arrow { position: fixed; left: 0; top: 0; width: 0; height: 0; display: none; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 30px solid var(--danger); margin: -15px 0 0 -14px; filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.9)); }
+      #fps { position: fixed; top: 64px; left: 12px; z-index: 1000; font: calc(18px * var(--ui-scale)) monospace; color: #f5f1e6; background: rgba(14, 20, 48, 0.72);
         padding: 2px 6px; border-radius: 4px; display: none; pointer-events: none; }
-      #help { position: fixed; bottom: 4px; left: 12px; color: var(--text); font-size: 12px; opacity: 0.55; pointer-events: none; }
+      #help { position: fixed; bottom: 8px; left: 12px; max-width: 400px; line-height: 1.25; color: var(--text); font-size: calc(18px * var(--ui-scale)); opacity: 0.7; pointer-events: none; text-shadow: 0 1px 6px #000; }
 
       #screens { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(14, 20, 48, 0.72); z-index: 50; padding: 16px; box-sizing: border-box; }
       #screens.on { display: flex; }
       #screens.clear { background: rgba(14, 20, 48, 0.35); }
-      .card { max-width: 560px; width: 100%; text-align: center; background: rgba(14, 20, 48, 0.92); border: 2px solid rgba(242, 193, 78, 0.5); border-radius: 16px; padding: 28px 32px; text-shadow: 0 2px 10px #000; }
-      .card h1 { margin: 0 0 6px; font-size: 40px; color: var(--gold); }
-      .card h2 { margin: 0 0 10px; font-size: 32px; color: var(--gold); }
+      .card { max-height: 92vh; overflow-y: auto; max-width: 560px; width: 100%; text-align: center; background: rgba(14, 20, 48, 0.92); border: 2px solid rgba(242, 193, 78, 0.5); border-radius: 16px; padding: 28px 32px; text-shadow: 0 2px 10px #000; }
+      .card h1 { margin: 0 0 6px; font-size: calc(40px * var(--ui-scale)); color: var(--gold); }
+      .card h2 { margin: 0 0 10px; font-size: calc(32px * var(--ui-scale)); color: var(--gold); }
       .card.lost h2 { color: var(--danger); }
       .card p { margin: 8px 0; line-height: 1.5; }
-      .card .quote { font-style: italic; font-size: 19px; margin: 16px 0; }
+      .card .quote { font-style: italic; font-size: calc(19px * var(--ui-scale)); margin: 16px 0; }
       .card .meta { opacity: 0.85; }
-      .card .score { font-size: 24px; }
-      .card .hint { font-size: 14px; opacity: 0.7; margin-top: 14px; }
+      .card .score { font-size: calc(24px * var(--ui-scale)); }
+      .card .hint { font-size: calc(18px * var(--ui-scale)); opacity: 0.8; margin-top: 14px; }
       .btns { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; align-items: stretch; }
       .btns.row { flex-direction: row; justify-content: center; }
-      button.btn { font: inherit; font-size: 18px; color: var(--text); background: rgba(242, 193, 78, 0.16); border: 2px solid var(--gold); border-radius: 10px; padding: 10px 18px; cursor: pointer; }
+      button.btn { font: inherit; font-size: calc(18px * var(--ui-scale)); color: var(--text); background: rgba(242, 193, 78, 0.16); border: 2px solid var(--gold); border-radius: 10px; padding: 10px 18px; cursor: pointer; }
       button.btn:hover, button.btn:focus-visible { background: rgba(242, 193, 78, 0.38); outline: none; }
       .row-set { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; text-align: left; }
       .row-set input[type="range"] { flex: 1; max-width: 260px; accent-color: var(--gold); }
       .row-set input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--gold); }
+      .row-set .kname { min-width: 90px; text-align: right; color: var(--gold); }
+      .row-set.conflict .kname, .row-set.conflict > span:first-child, .bad-text { color: var(--danger); }
+      .row-set .note { color: var(--danger); font-size: calc(18px * var(--ui-scale)); flex-basis: 100%; }
+      .row-set.keyrow { flex-wrap: wrap; margin: 8px 0; }
+      .banner { background: rgba(255, 90, 95, 0.18); border: 2px solid var(--danger); border-radius: 10px; padding: 8px 12px; color: var(--danger); margin: 10px 0; }
+      .sect { margin: 16px 0 4px; color: var(--gold); text-align: left; font-weight: 600; }
+      .btn.small { padding: 4px 12px; }
+      .name-input { font: inherit; font-size: calc(18px * var(--ui-scale)); width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; border: 2px solid var(--gold); background: rgba(0, 0, 0, 0.4); color: var(--text); margin-top: 10px; }
+      .name-input.invalid { border-color: var(--danger); }
+      .name-err { color: var(--danger); min-height: calc(26px * var(--ui-scale)); margin: 6px 0 0; text-align: left; }
+      table.board { width: 100%; border-collapse: collapse; margin-top: 12px; text-align: left; }
+      table.board th, table.board td { padding: 4px 8px; border-bottom: 1px solid rgba(245, 241, 230, 0.2); }
+      table.board th { color: var(--gold); font-weight: 600; }
+      table.board td.num, table.board th.num { text-align: right; }
+      table.board tr.me td { background: rgba(242, 193, 78, 0.25); color: var(--gold); font-weight: 700; }
       .row-set output { min-width: 44px; text-align: right; color: var(--gold); }
     </style>
   </head>
@@ -97,9 +118,11 @@
     </div>
     <div id="prompt"></div>
     <div id="arrow"></div>
+    <div id="shade-arrows"></div>
+    <div id="captions" aria-live="polite"></div>
     <div id="wind-warn">Gió mạnh sắp tới!</div>
     <div id="fps"></div>
-    <div id="help">WASD / mũi tên: di chuyển · Space: nhảy · Shift: lướt · E: nạp ánh sáng · F: toả sáng · H: đom đóm dẫn đường · [ ] hoặc kéo chuột: xoay camera · P / Esc: tạm dừng · C: bảng màu dễ phân biệt · R: chơi lại</div>
+    <div id="help">P / Esc: tạm dừng · R: chơi lại · C: màu dễ phân biệt · H: đom đóm dẫn đường</div>
     <div id="screens"></div>
     <script type="module" src="./main.ts"></script>
   </body>
