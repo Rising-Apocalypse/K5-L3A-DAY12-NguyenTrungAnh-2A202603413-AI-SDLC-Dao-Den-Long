@@ -120,3 +120,9 @@ Prompt (tiếng Anh, tóm tắt): đọc đủ 3 file plan/spec/PRD trước khi
 
 Cách đã tiết kiệm: kế hoạch chi tiết để agent ít phải đoán; dùng agent mới thay vì kéo dài ngữ cảnh 200k; giảm effort xuống medium cho phần hoàn thiện; kiểm chứng bằng script thay vì để agent tự chơi thử dài.
 Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh giữa chừng.
+
+### 11. Commit và tag `phase-1` (người dùng duyệt: "Commit + tag phase-1")
+- Trước khi commit: kiểm tra `.gitignore` (bỏ qua `node_modules`, `dist`, `out`, `.env*`), quét chuỗi giống key/token trong 96 file sắp commit → không có.
+- Chia thành 8 commit theo nhóm (spec/plan → tooling → harness → headless → core → web → test → docs). Code được viết cùng một lượt nên các commit trung gian không build riêng được; mỗi commit chỉ gom các file cùng một mảng.
+- Chạy `npm run verify` trên cây sạch tại commit `6633d87` → `docs/proof/*` ghi đúng hash, 213/213 test. Commit proof cùng log này, rồi gắn tag `phase-1` vào commit đó.
+- Chưa push: chưa có remote GitHub.
