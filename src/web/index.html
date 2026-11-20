@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Đảo Đèn Lồng</title>
+    <style>
+      :root {
+        --sky: #0e1430;
+        --text: #f5f1e6;
+        --gold: #f2c14e;
+        --danger: #ff5a5f;
+        --panel: rgba(14, 20, 48, 0.72);
+      }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); color: var(--text); font-family: system-ui, sans-serif; }
+      canvas#view { display: block; width: 100vw; height: 100vh; cursor: grab; }
+      #hud { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; gap: 10px; flex-wrap: wrap; pointer-events: none; }
+      #hud .item { background: var(--panel); color: var(--text); padding: 6px 12px; border-radius: 8px; font-size: 15px; font-variant-numeric: tabular-nums; }
+      #hud .item b { color: var(--gold); font-weight: 600; }
+      #hud .item.bad, #hud .item.bad b { color: var(--danger); }
+      #hud .item.dim { opacity: 0.6; }
+      #prompt { position: fixed; left: 50%; bottom: 14%; transform: translateX(-50%); background: var(--panel); color: var(--gold);
+        padding: 8px 18px; border-radius: 10px; font-size: 18px; pointer-events: none; display: none; }
+      #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.45s ease-out;
+        background: radial-gradient(ellipse at center, rgba(255, 90, 95, 0) 40%, rgba(255, 90, 95, 0.55) 100%); }
+      #flash.on { opacity: 1; transition: none; }
+      #banner { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+        background: rgba(14, 20, 48, 0.62); text-shadow: 0 2px 12px #000; pointer-events: none; text-align: center; padding: 0 16px; }
+      #banner-text { font-size: 40px; color: var(--gold); }
+      #banner.lost #banner-text { color: var(--danger); }
+      #banner-score { font-size: 26px; }
+      #banner-sub { font-size: 16px; opacity: 0.85; }
+      #banner small { font-size: 20px; margin-top: 12px; color: var(--text); }
+      #help { position: fixed; bottom: 10px; left: 12px; color: var(--text); font-size: 13px; opacity: 0.7; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="flash"></div>
+    <div id="hud">
+      <div class="item" id="hud-time"></div>
+      <div class="item" id="hud-lanterns"></div>
+      <div class="item" id="hud-flames"></div>
+      <div class="item" id="hud-carried"></div>
+      <div class="item" id="hud-pulse"></div>
+      <div class="item" id="hud-score"></div>
+    </div>
+    <div id="prompt"></div>
+    <div id="banner">
+      <span id="banner-text"></span>
+      <span id="banner-score"></span>
+      <span id="banner-sub"></span>
+      <small>R — Chơi lại</small>
+    </div>
+    <div id="help">WASD / mũi tên: di chuyển · Space: nhảy · E: nạp ánh sáng · F: toả sáng · [ ] hoặc kéo chuột: xoay camera · R: chơi lại</div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
