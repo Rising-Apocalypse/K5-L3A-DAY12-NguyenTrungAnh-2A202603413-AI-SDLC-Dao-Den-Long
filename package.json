@@ -1,0 +1,32 @@
+{
+  "name": "dao-den-long",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Đảo Đèn Lồng (Lantern Island) - a small 3D game with a deterministic headless mode",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:headless": "node scripts/build-headless.mjs",
+    "build:web": "vite build",
+    "build": "tsc --noEmit && npm run build:headless && npm run build:web",
+    "dev": "vite",
+    "play": "vite preview --open",
+    "test": "npm run build:headless && vitest run",
+    "verify": "node scripts/verify.mjs",
+    "headless": "node dist/headless.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}
