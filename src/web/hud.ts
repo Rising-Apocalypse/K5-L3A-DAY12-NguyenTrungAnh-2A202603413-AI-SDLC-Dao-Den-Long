@@ -2,6 +2,7 @@ import { xzDist } from '../core/geom';
 import { TICK_RATE } from '../core/sim';
 import type { Tuning } from '../core/tuning';
 import type { GameEvent, GameState } from '../core/types';
+import { isColorBlind } from './colorblind';
 
 const byId = (id: string): HTMLElement => {
   const el = document.getElementById(id);
@@ -10,8 +11,8 @@ const byId = (id: string): HTMLElement => {
 };
 
 const REASON_TEXT = {
-  all_lit: ['Bình minh! Đảo đã sáng lại', 'Cả 5 Đèn Lồng Lớn đã được thắp.'],
-  dawn: ['Trời sáng mất rồi...', 'Hết đêm mà các đèn chưa sáng hết.'],
+  dawn_survived: ['Bình minh! Đảo đã sáng lại', 'Đủ đèn lồng còn sáng khi trời rạng.'],
+  dawn: ['Trời sáng mất rồi...', 'Hết đêm mà chưa đủ đèn còn sáng.'],
   no_flames: ['Bóng Mực đã nuốt ánh sáng...', 'Mây đã hết ngọn lửa.'],
 } as const;
 
@@ -42,13 +43,29 @@ export function createHud(tuning: Tuning) {
   pauseBanner.textContent = 'Tạm dừng — P để tiếp tục';
   document.body.appendChild(pauseBanner);
 
+  const cbLabel = document.createElement('div');
+  cbLabel.className = 'item';
+  cbLabel.id = 'hud-colorblind';
+  dash.parentNode?.insertBefore(cbLabel, dash.nextSibling);
+  const showColorBlind = (): void => {
+    set(cbLabel, 'Bảng màu dễ phân biệt [C]', isColorBlind() ? 'bật' : 'tắt');
+  };
+
   let reason: keyof typeof REASON_TEXT | null = null;
 
   const set = (el: HTMLElement, label: string, value: string) => {
     el.innerHTML = `${label}: <b>${value}</b>`;
   };
 
+  const warn = (text: string): string => (isColorBlind() ? `⚠ ${text}` : text);
+
+  showColorBlind();
   return {
+    /** The colour-blind palette was toggled (key C). */
+    setColorBlind(): void {
+      showColorBlind();
+    },
+
     /** Feed the events of a step: a hit flashes the screen red, game_over remembers why the night ended. */
     onEvents(events: readonly GameEvent[]): void {
       for (const e of events) {
@@ -74,10 +91,13 @@ export function createHud(tuning: Tuning) {
       const p = state.player;
       const secs = Math.max(0, Math.ceil(state.timeLeftS));
       set(time, 'Thời gian', `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
-      set(lanterns, 'Đèn lồng', `${state.lanterns.filter((l) => l.lit).length}/${state.lanterns.length}`);
+      const needed = Math.ceil(tuning.win_ratio * state.lanterns.length);
+      set(lanterns, 'Đèn lồng', `${state.lanterns.filter((l) => l.lit).length}/${state.lanterns.length}, cần ${needed}`);
       set(flames, 'Ngọn lửa', `${'●'.repeat(Math.max(0, p.flames))}${p.flames <= 0 ? '0' : ''}`);
       flames.classList.toggle('bad', p.flames <= 1);
-      set(carried, 'Ánh sáng mang theo', `${p.carried}/${tuning.carry_capacity}`);
+      if (p.flames <= 1) flames.innerHTML = warn(flames.innerHTML);
+      const capacity = Math.min(tuning.capacity_max, tuning.carry_capacity + 2 * p.successfulLights);
+      set(carried, 'Ánh sáng mang theo', `${p.carried}/${capacity}`);
       set(score, 'Điểm', String(state.score));
 
       const cooling = p.pulseCooldownTicks > 0;
@@ -100,12 +120,13 @@ export function createHud(tuning: Tuning) {
       const isPaused = state.paused && state.state === 'playing';
       pauseBanner.style.display = isPaused ? 'block' : 'none';
 
-      // "E" prompt: nearest unlit lantern within interact_radius, with how full it already is.
+      // "E" prompt: nearest lantern within interact_radius that can take motes (unlit, or lit and below full).
       let near: GameState['lanterns'][number] | null = null;
       let best = Infinity;
       for (const l of state.lanterns) {
         const d = xzDist(p.pos, l.pos);
-        if (!l.lit && d <= tuning.interact_radius && d < best) {
+        const full = l.lit && l.fuelUnits >= tuning.fuel_max * TICK_RATE;
+        if (!full && d <= tuning.interact_radius && d < best) {
           near = l;
           best = d;
         }
@@ -116,7 +137,9 @@ export function createHud(tuning: Tuning) {
         prompt.textContent = 'Mây rơi khỏi đảo...';
         prompt.style.display = 'block';
       } else if (near) {
-        prompt.textContent = `E — Nạp ánh sáng (${near.deposited}/${tuning.lantern_cost})`;
+        prompt.textContent = near.lit
+          ? `E — Châm dầu (${(near.fuelUnits / TICK_RATE).toFixed(0)}/${tuning.fuel_max})`
+          : `E — Nạp ánh sáng (${near.deposited}/${near.everLit ? tuning.relight_cost : tuning.lantern_cost})`;
         prompt.style.display = 'block';
       } else {
         prompt.style.display = 'none';
@@ -127,7 +150,7 @@ export function createHud(tuning: Tuning) {
       banner.classList.toggle('lost', state.state === 'lost');
       if (over) {
         pauseBanner.style.display = 'none';
-        const [title, sub] = REASON_TEXT[reason ?? (state.state === 'won' ? 'all_lit' : 'no_flames')];
+        const [title, sub] = REASON_TEXT[reason ?? (state.state === 'won' ? 'dawn_survived' : 'no_flames')];
         bannerText.textContent = title;
         bannerScore.textContent = `Điểm cuối: ${state.score}`;
         bannerSub.textContent = sub;

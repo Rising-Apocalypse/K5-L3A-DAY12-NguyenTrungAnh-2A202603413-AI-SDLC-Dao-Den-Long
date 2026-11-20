@@ -136,7 +136,7 @@ describe('deposit', () => {
     const events = game.step(input({ interact: true })).filter((e) => e.name !== 'night_start');
     expect(events).toEqual([
       { name: 'deposit', data: { lantern_id: 'L1', amount: missing, deposited: TUNING.lantern_cost } },
-      { name: 'lantern_lit', data: { lantern_id: 'L1' } },
+      { name: 'lantern_lit', data: { lantern_id: 'L1', relight: false } },
     ]);
     expect(game.state.player.carried).toBe(TUNING.carry_capacity - missing);
     expect(game.state.score).toBe(missing * S.per_mote + S.per_lantern);
@@ -163,7 +163,7 @@ describe('deposit', () => {
     expect(at(1, 0).filter((e) => e.name !== 'night_start')).toEqual([]); // amount 0 -> no event
   });
 
-  it('goes to the nearest unlit lantern in reach; lit lanterns are skipped', () => {
+  it('goes to the nearest lantern in reach that can take motes: a lit one below full is refuelled, not ignored', () => {
     const game = make({
       player: { pos: [0, 0, 0], carried: 4 },
       lanterns: [
@@ -173,8 +173,10 @@ describe('deposit', () => {
         { id: 'L4', pos: [0, 0, 1.5] },
       ],
     });
+    // L2 is lit but already lost 1 unit of fuel to this tick's decay (stage 2), so it is the nearest candidate: refuel.
     const events = game.step(input({ interact: true }));
-    expect(named(events, 'deposit')[0]!.data).toMatchObject({ lantern_id: 'L3' });
+    expect(named(events, 'deposit')).toEqual([]);
+    expect(named(events, 'refuel')[0]!.data).toEqual({ lantern_id: 'L2', amount: 1, fuel: 100 });
   });
 
   it('is not possible while waiting to respawn', () => {
@@ -588,33 +590,35 @@ describe('ending the night', () => {
     const game = make(lastLantern({ shades: [{ id: 'S1', pos: [0.3, 1, 24] }] }));
     const events = game.step(input({ interact: true }));
     expect(named(events, 'player_hit')).toEqual([]);
-    expect(named(events, 'game_over')).toEqual([{ name: 'game_over', data: { result: 'won', reason: 'all_lit' } }]);
+    expect(named(events, 'game_over')).toEqual([]); // lighting the last lantern no longer wins early
   });
 
-  it('lighting the last lantern on the tick the time runs out is a win (all_lit beats dawn), with no seconds bonus', () => {
+  it('lighting the last lantern on the tick the time runs out is a dawn win with the dawn bonus', () => {
     const game = make(lastLantern({ time_left_s: 1 / 60 }));
     const events = game.step(input({ interact: true }));
     expect(game.state.timeLeftS).toBe(0);
-    expect(named(events, 'game_over')).toEqual([{ name: 'game_over', data: { result: 'won', reason: 'all_lit' } }]);
-    expect(game.state.score).toBe(TUNING.lantern_cost * S.per_mote + S.per_lantern + TUNING.flames * S.per_flame_left);
+    expect(named(events, 'game_over')).toEqual([{ name: 'game_over', data: { result: 'won', reason: 'dawn_survived' } }]);
+    // 10 motes * 5 + 100 (first light) = 150; dawn: L1 just lit = 6000 units -> 50 + 100 = 150, L2..L5 had 1 tick of
+    // decay = 5999 units -> 50 + 99 = 149 each (596); flames 3 * 50 = 150. Total 150 + 150 + 596 + 150 = 1046.
+    expect(game.state.score).toBe(1046);
   });
 
-  it('the win bonus is floor(time_left_s) * per_second_left + flames * per_flame_left, added before game_over', () => {
+  it('there is no seconds bonus and no early win: lighting the last lantern with time left only scores the light', () => {
     const game = make(lastLantern({ time_left_s: 123.5, player: { pos: [0, 0, 24], carried: TUNING.lantern_cost, flames: 2 } }));
     game.step(input({ interact: true }));
-    const left = Math.floor(123.5 - 1 / 60);
-    expect(game.state.score).toBe(TUNING.lantern_cost * S.per_mote + S.per_lantern + left * S.per_second_left + 2 * S.per_flame_left);
-    expect(game.state.state).toBe('won');
+    expect(game.state.score).toBe(TUNING.lantern_cost * S.per_mote + S.per_lantern); // 50 + 100, no per_second_left, no flames bonus
+    expect(game.state.state).toBe('playing');
   });
 
-  it('a game that starts with 0 flames, 0 seconds or all lanterns lit ends at the first step', () => {
+  it('a game that starts with 0 flames or 0 seconds ends at the first step (all lanterns lit does not)', () => {
     const noFlames = make({ player: { flames: 0 } });
     expect(noFlames.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'no_flames' } }]);
     const noTime = make({ time_left_s: 0 });
     expect(noTime.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'lost', reason: 'dawn' } }]);
     const allLit = make({ lanterns: [1, 2, 3, 4, 5].map((n) => ({ id: `L${n}`, lit: true })), time_left_s: 10 });
-    expect(allLit.step(idle).filter((e) => e.name !== 'night_start')).toEqual([{ name: 'game_over', data: { result: 'won', reason: 'all_lit' } }]);
-    expect(allLit.state.score).toBe(Math.floor(10 - 1 / 60) * S.per_second_left + TUNING.flames * S.per_flame_left); // pre-lit: no per_lantern
+    expect(allLit.step(idle).filter((e) => e.name !== 'night_start')).toEqual([]); // all lit no longer ends the game
+    expect(allLit.state.state).toBe('playing');
+    expect(allLit.state.score).toBe(0);
   });
 
   it('after game over step() is inert: no events, no tick, no change', () => {

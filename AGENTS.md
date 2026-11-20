@@ -26,6 +26,7 @@ Small 3D game (TypeScript + Three.js) with a deterministic headless mode that is
 - Malformed inputs/scenario file -> exit 2; bad CLI usage or unreadable file -> exit 1.
 - Output must be byte-identical for the same seed + scenario + inputs. Coordinates are rounded to 3 decimals.
 - Pause freezes everything (sim_tick, position, timers) but tick.
+- Lantern fuel is stored as integer 1/60 units (full = 6000); the output `fuel` is rounded to 1 decimal. Never use floats for fuel.
 - Snapshot key order is fixed (see `docs/plans/02-phase2-core-v1.1.md` §3.2).
 
 ## Definition of done

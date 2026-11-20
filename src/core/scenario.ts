@@ -11,12 +11,26 @@ export interface Scenario {
     dashCdTicks?: number;
     pulseCdTicks?: number;
     charmTicks?: number;
+    successfulLights?: number;
   };
   randomMotes?: boolean;
   randomShades?: boolean;
   motes?: Vec3[];
-  shades?: { pos: Vec3; id?: string; state?: ShadeStateName; stateTicksLeft?: number }[];
-  lanterns?: { id: string; pos?: Vec3; lit?: boolean; deposited?: number }[];
+  shades?: {
+    pos: Vec3;
+    id?: string;
+    state?: ShadeStateName;
+    stateTicksLeft?: number;
+    targetLanternId?: string;
+  }[];
+  lanterns?: {
+    id: string;
+    pos?: Vec3;
+    lit?: boolean;
+    deposited?: number;
+    fuel?: number;
+    everLit?: boolean;
+  }[];
   timeLeftS?: number;
   charms?: { id: string; pos: Vec3; available: boolean; respawnTicks: number }[];
   drifters?: { pos: Vec3 }[];
@@ -42,6 +56,13 @@ function count(v: unknown, where: string): number {
   return v;
 }
 
+function fuelVal(v: unknown, where: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 100) {
+    throw new FormatError(`scenario: ${where} must be a number between 0 and 100`);
+  }
+  return v;
+}
+
 function bool(v: unknown, where: string): boolean {
   if (typeof v !== 'boolean') throw new FormatError(`scenario: ${where} must be a boolean`);
   return v;
@@ -52,7 +73,7 @@ function list(v: unknown, where: string): unknown[] {
   return v;
 }
 
-const VALID_SHADE_STATES = new Set(['spawning', 'wander', 'chase', 'recoil', 'stunned']);
+const VALID_SHADE_STATES = new Set(['spawning', 'wander', 'chase', 'recoil', 'stunned', 'drain']);
 
 /** Validate a parsed scenario JSON document. Throws FormatError. Unknown keys are ignored. */
 export function parseScenario(json: unknown): Scenario {
@@ -70,6 +91,7 @@ export function parseScenario(json: unknown): Scenario {
     if (p.dash_cd_ticks !== undefined) out.player.dashCdTicks = count(p.dash_cd_ticks, 'player.dash_cd_ticks');
     if (p.pulse_cd_ticks !== undefined) out.player.pulseCdTicks = count(p.pulse_cd_ticks, 'player.pulse_cd_ticks');
     if (p.charm_ticks !== undefined) out.player.charmTicks = count(p.charm_ticks, 'player.charm_ticks');
+    if (p.successful_lights !== undefined) out.player.successfulLights = count(p.successful_lights, 'player.successful_lights');
   }
 
   if (json.random_motes !== undefined) out.randomMotes = bool(json.random_motes, 'random_motes');
@@ -83,7 +105,13 @@ export function parseScenario(json: unknown): Scenario {
     const seen = new Set<string>();
     out.shades = list(json.shades, 'shades').map((s, i) => {
       if (!isRecord(s)) throw new FormatError(`scenario: shades[${i}] must be an object`);
-      const shade: { pos: Vec3; id?: string; state?: ShadeStateName; stateTicksLeft?: number } = { pos: vec3(s.pos, `shades[${i}].pos`) };
+      const shade: {
+        pos: Vec3;
+        id?: string;
+        state?: ShadeStateName;
+        stateTicksLeft?: number;
+        targetLanternId?: string;
+      } = { pos: vec3(s.pos, `shades[${i}].pos`) };
       if (s.id !== undefined) {
         if (typeof s.id !== 'string' || s.id === '') {
           throw new FormatError(`scenario: shades[${i}].id must be a non-empty string`);
@@ -94,12 +122,21 @@ export function parseScenario(json: unknown): Scenario {
       }
       if (s.state !== undefined) {
         if (typeof s.state !== 'string' || !VALID_SHADE_STATES.has(s.state)) {
-          throw new FormatError(`scenario: shades[${i}].state must be one of spawning|wander|chase|recoil|stunned`);
+          throw new FormatError(`scenario: shades[${i}].state must be one of spawning|wander|chase|recoil|stunned|drain`);
         }
         shade.state = s.state as ShadeStateName;
       }
       if (s.state_ticks_left !== undefined) {
         shade.stateTicksLeft = count(s.state_ticks_left, `shades[${i}].state_ticks_left`);
+      }
+      if (s.target_lantern_id !== undefined) {
+        if (typeof s.target_lantern_id !== 'string' || s.target_lantern_id === '') {
+          throw new FormatError(`scenario: shades[${i}].target_lantern_id must be a non-empty string`);
+        }
+        shade.targetLanternId = s.target_lantern_id;
+      }
+      if (shade.state === 'drain' && !shade.targetLanternId) {
+        throw new FormatError(`scenario: shades[${i}] with state "drain" requires target_lantern_id`);
       }
       return shade;
     });
@@ -112,10 +149,19 @@ export function parseScenario(json: unknown): Scenario {
       if (typeof l.id !== 'string' || !/^L[1-9][0-9]*$/.test(l.id)) {
         throw new FormatError(`scenario: lanterns[${i}].id must look like "L1".."L5"`);
       }
-      const lantern: { id: string; pos?: Vec3; lit?: boolean; deposited?: number } = { id: l.id };
+      const lantern: {
+        id: string;
+        pos?: Vec3;
+        lit?: boolean;
+        deposited?: number;
+        fuel?: number;
+        everLit?: boolean;
+      } = { id: l.id };
       if (l.pos !== undefined) lantern.pos = vec3(l.pos, `lanterns[${i}].pos`);
       if (l.lit !== undefined) lantern.lit = bool(l.lit, `lanterns[${i}].lit`);
       if (l.deposited !== undefined) lantern.deposited = count(l.deposited, `lanterns[${i}].deposited`);
+      if (l.fuel !== undefined) lantern.fuel = fuelVal(l.fuel, `lanterns[${i}].fuel`);
+      if (l.ever_lit !== undefined) lantern.everLit = bool(l.ever_lit, `lanterns[${i}].ever_lit`);
       return lantern;
     });
   }

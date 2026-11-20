@@ -81,7 +81,7 @@ describe('headless output', () => {
     ]);
     expect(snap.tick).toBe(30);
     expect(snap.sim_tick).toBe(30);
-    expect(snap.time_left_s).toBe(299.5);
+    expect(snap.time_left_s).toBe(239.5); // 240 - 30/60
     expect(snap.motes_active).toBe(20);
     expect(snap.motes.length).toBe(20);
     expect(snap.shades).toEqual([]);
@@ -100,7 +100,7 @@ describe('headless output', () => {
     const first = lines[0];
     expect(first.motes).toEqual([{ id: 'M1', pos: [0, 0, 5], kind: 'random', ttl_s: null }]);
     expect(first.shades).toEqual([{ id: 'S1', pos: [10, 0, 0], state: 'wander' }]);
-    expect(first.lanterns[0]).toEqual({ id: 'L1', pos: [0, 0, 25], lit: false, deposited: 0 });
+    expect(first.lanterns[0]).toEqual({ id: 'L1', pos: [0, 0, 25], lit: false, deposited: 0, fuel: 0, ever_lit: false, relit_count: 0 });
     expect(first.time_left_s).toBe(300);
     // Moves [0,1] for the first 120 ticks, then stops: z = speed * 120 / 60.
     const at = (tick: number) => snapshots(lines).find((s) => s.tick === tick);
@@ -152,13 +152,13 @@ describe('headless output', () => {
     expect(end.state).not.toBe('playing'); // an idle player cannot survive the whole night (or the night ends: dawn)
   });
 
-  it('a night without shades and without actions ends exactly at dawn: tick 18000, time_left_s 0, lost', () => {
+  it('a night without shades and without actions ends exactly at dawn: tick 14400, time_left_s 0, lost', () => {
     const scenario = writeJson('quiet-night.json', { random_shades: false });
     const { result, lines } = run(['--scenario', scenario], { ticks: 20000 });
     expect(result.status).toBe(0);
     expect(lines.at(-1)).toEqual({ type: 'end', ticks: TUNING.night1_duration_s * 60, state: 'lost', score: 0 });
     expect(snapshots(lines).at(-1).time_left_s).toBe(0);
-    expect(lines.at(-2)).toMatchObject({ type: 'snapshot', tick: 18000, state: 'lost' });
+    expect(lines.at(-2)).toMatchObject({ type: 'snapshot', tick: 14400, state: 'lost' });
   });
 });
 

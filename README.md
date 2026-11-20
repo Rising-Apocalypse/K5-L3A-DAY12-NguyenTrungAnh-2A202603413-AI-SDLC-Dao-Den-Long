@@ -77,21 +77,24 @@ npm run verify    # build + test + chạy mọi tests/scenarios/* hai lần, so 
 
 ## Cách tính điểm
 
-Điểm lấy từ `game.contract.json` → `tuning.score`. Luật thật (cài trong `src/core/sim.ts`):
+Điểm lấy từ `game.contract.json` → `tuning.score`. Luật thật (Contract v1.2, cài trong `src/core/sim.ts`):
 
 | Sự kiện | Điểm |
 |---|---|
-| Nạp đốm sáng vào đèn lồng (mỗi đốm, lúc nạp; **không** phải lúc nhặt) | 10 |
-| Thắp sáng một đèn lồng (đủ 10 đốm) | 100 |
-| Mỗi Bóng Mực bị choáng bởi pulse | 5 |
-| Thắng: mỗi giây còn lại (làm tròn xuống) | 2 |
-| Thắng: mỗi ngọn lửa còn lại | 50 |
+| Nạp đốm sáng vào đèn lồng, hoặc châm dầu cho đèn đang sáng (mỗi đốm, lúc nạp; **không** phải lúc nhặt) | 5 |
+| Thắp sáng một đèn lồng lần đầu (đủ 10 đốm) | 100 |
+| Thắp lại một đèn đã từng sáng (đủ 5 đốm) | 40 |
+| Mỗi Bóng Mực bị choáng bởi pulse (thêm 10 nếu nó đang hút đèn) | 5 (hoặc 15) |
+| Thắng lúc bình minh: mỗi đèn còn sáng | 50 + phần nguyên của nhiên liệu còn lại |
+| Thắng lúc bình minh: mỗi ngọn lửa còn lại | 50 |
 
-- Đèn sáng sẵn từ kịch bản không cho điểm. Thua thì không có điểm thưởng cuối.
-- Kết thúc theo thứ tự: hết ngọn lửa (thua) → đủ 5 đèn (thắng, kể cả đúng tick hết giờ) → hết giờ (thua, bình minh).
+- Đèn có nhiên liệu 0..100, tự hao 1/giây; mỗi đốm châm thêm 10. Hết nhiên liệu thì đèn tắt và mất số đốm đã nạp. Nhiên liệu < 30 thì đèn mất vùng an toàn và bị Bóng Mực hút thêm 5/giây.
+- Không còn thắng sớm: Đêm kéo dài 240 s. Hết giờ mà có ít nhất 3/5 đèn sáng thì thắng (`dawn_survived`), ngược lại thua (`dawn`); hết ngọn lửa là thua (`no_flames`, xét trước cả ở tick bình minh). Thua thì không có điểm thưởng cuối, không còn thưởng theo giây.
+- Đèn sáng sẵn từ kịch bản không cho điểm (nhưng vẫn tính vào thưởng bình minh nếu còn sáng).
+- Sức chứa: 10 + 2 cho mỗi lần thắp thành công, tối đa 20.
 - Mất 1 ngọn lửa khi bị Bóng Mực chạm (rơi một nửa số đốm đang mang) hoặc rơi khỏi đảo (mất hết đốm).
-- Pulse tốn 3 đốm, bán kính 5 m, choáng 2 s, hồi 3 s. Vùng an toàn quanh đèn sáng bán kính 6 m: Bóng Mực không vào được.
-- Chi tiết từng luật và giả định: `docs/notes/assumptions.md`, mục "Phase 1 — luật chơi".
+- Pulse tốn 3 đốm, bán kính 5 m, choáng 2 s, hồi 3 s. Vùng an toàn quanh đèn sáng (nhiên liệu ≥ 30) bán kính 6 m: Bóng Mực không vào được.
+- Chi tiết từng luật và giả định: `docs/notes/assumptions.md`, mục "Phase 1 — luật chơi" và "Phase 3 — Đèn cạn dầu".
 
 ## Giải thích tuning
 

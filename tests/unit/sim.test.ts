@@ -31,7 +31,7 @@ describe('tick model', () => {
     const snap = game.snapshot();
     expect(snap.tick).toBe(100);
     expect(snap.sim_tick).toBe(100);
-    expect(snap.time_left_s).toBe(298.333); // 300 - 100/60 = 298.3333..
+    expect(snap.time_left_s).toBe(238.333); // 240 - 100/60 = 238.3333..
     expect(snap.state).toBe('playing');
   });
 
@@ -53,9 +53,9 @@ describe('tick model', () => {
       'type', 'tick', 'sim_tick', 'night', 'state', 'time_left_s', 'score', 'wind', 'player', 'lanterns', 'shades', 'motes_active', 'motes', 'drifters', 'charms',
     ]);
     expect(Object.keys(snap.player)).toEqual([
-      'pos', 'vel', 'grounded', 'flames', 'carried', 'invuln', 'dash_cd_s', 'pulse_cd_s', 'charm_s',
+      'pos', 'vel', 'grounded', 'flames', 'carried', 'capacity', 'invuln', 'dash_cd_s', 'pulse_cd_s', 'charm_s',
     ]);
-    expect(Object.keys(snap.lanterns[0]!)).toEqual(['id', 'pos', 'lit', 'deposited']);
+    expect(Object.keys(snap.lanterns[0]!)).toEqual(['id', 'pos', 'lit', 'deposited', 'fuel', 'ever_lit', 'relit_count']);
     expect(Object.keys(snap.motes[0]!)).toEqual(['id', 'pos', 'kind', 'ttl_s']);
   });
 
@@ -256,7 +256,7 @@ describe('level and scenario building', () => {
     expect(game.snapshot().tick).toBe(0);
     expect(game.state.timeLeftS).toBe(120);
     expect(game.state.player).toMatchObject({ pos: [1, 0, 2], carried: 4, flames: 2 });
-    expect(game.snapshot().lanterns[2]).toEqual({ id: 'L3', pos: [14.7, 0, -20.2], lit: true, deposited: 10 });
+    expect(game.snapshot().lanterns[2]).toEqual({ id: 'L3', pos: [14.7, 0, -20.2], lit: true, deposited: 10, fuel: 100, ever_lit: true, relit_count: 0 });
     for (let i = 0; i < 30; i++) expect(game.step(idle).filter((e) => e.name !== 'night_start')).toEqual([]);
     expect(game.state.score).toBe(0);
   });
@@ -264,9 +264,9 @@ describe('level and scenario building', () => {
   it('lantern overrides apply by id; the others keep their defaults', () => {
     const scenario = parseScenario({ lanterns: [{ id: 'L2', pos: [1, 0, 2] }, { id: 'L1', pos: [0, 0, 30], deposited: 3 }] });
     const lanterns = createGame({ seed: 1, scenario }).state.lanterns;
-    expect(lanterns[0]).toEqual({ id: 'L1', pos: [0, 0, 30], lit: false, deposited: 3 });
-    expect(lanterns[1]).toEqual({ id: 'L2', pos: [1, 0, 2], lit: false, deposited: 0 });
-    expect(lanterns[2]).toEqual({ id: 'L3', pos: [14.7, 0, -20.2], lit: false, deposited: 0 });
+    expect(lanterns[0]).toEqual({ id: 'L1', pos: [0, 0, 30], lit: false, deposited: 3, fuelUnits: 0, everLit: false, relitCount: 0 });
+    expect(lanterns[1]).toEqual({ id: 'L2', pos: [1, 0, 2], lit: false, deposited: 0, fuelUnits: 0, everLit: false, relitCount: 0 });
+    expect(lanterns[2]).toEqual({ id: 'L3', pos: [14.7, 0, -20.2], lit: false, deposited: 0, fuelUnits: 0, everLit: false, relitCount: 0 });
   });
 
   it('an unknown lantern id is a FormatError', () => {

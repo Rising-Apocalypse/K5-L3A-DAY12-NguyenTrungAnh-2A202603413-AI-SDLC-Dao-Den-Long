@@ -163,3 +163,36 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
   - Bùa: `charm_picked {C1, 600}`, chạy **7.2 m** trong 60 tick, `respawn_s` 45 ✓.
   - Rơi: `{by: fall, flames: 1, dropped: 0, lost: 4}` ✓. Thứ tự khóa snapshot và player đúng §3.2 ✓.
 - Kết luận: **chấp nhận Plan 02**. Số liệu token của Gemini: `agy -p` không in số token, nên không đo được (ghi nhận là hạn chế).
+
+### 7. Commit và tag `phase-2`
+- Opus chạy `verify` trên cây sạch (tạm chuyển `docs/adr/` và plan 03 ra ngoài để cây không bị đánh dấu "dirty"), commit bằng chứng, tag `phase-2` = `52a27db`, rồi push.
+
+### 8. Gemini làm Plan 03, bị dừng giữa chừng
+- Lần chạy thứ nhất bị ngắt khi phiên Claude khởi động lại (log: "error: interrupted"). Lúc đó đã xong bước 1–4 (contract v1.2, tuning, hằng số, kiểu dữ liệu, `level.ts`).
+- Lần chạy thứ hai bị lỗi **hết quota**: `RESOURCE_EXHAUSTED (429) Individual quota reached ... Resets in 167h9m51s`, `agy` thoát với mã 3. Trước khi hết quota, Gemini kịp làm bước 5 (đọc field mới trong `scenario.ts` và thêm unit test).
+- Opus review bước 1–5: đúng plan, chỉ có test **thêm mới**, không sửa test cũ. Repo chưa build được vì `sim.ts` chưa được cập nhật.
+- Người dùng: "nó hết quota đấy bạn tiếp tục với sonnet medium đi". Bước 6–10 giao cho **Sonnet, effort medium**, dùng chung file plan.
+
+### 9. Kết quả Plan 03 (Sonnet tự báo)
+- Sửa `sim.ts` (luật 1–11), web (`hud.ts`, `render.ts`, `main.ts`, `index.html`, thêm `colorblind.ts`), tài liệu (CHANGELOG, assumptions, README, AGENTS) và `verify.mjs` (thêm `phase-3.md`). Thêm 12 fixture và 14 test mới. Kết quả: build OK, **262/262** test, verify exit 0, chạy seed 3 hai lần cho file giống hệt nhau.
+- **Sonnet làm lệch ví dụ trong plan, nhưng đúng luật.** Lỗi nằm ở plan của Opus, không phải ở code:
+  1. Ví dụ `refuel` (fuel 50, mang 10) trong plan ghi là dùng 5 đom đóm. Thực tế dầu bị hao ở bước 2 trước khi châm ở bước 5, nên còn 2999 đơn vị và cần `ceil(3001/600)` = **6** đom đóm. Test dùng 6.
+  2. Không có trường hợp đèn đã đầy ở bước 5, vì đèn vừa bị hao trong cùng tick. Test thay bằng trường hợp mang 0 đom đóm: không có event.
+  3. Ngưỡng 30.0: một đèn đặt sẵn đúng 30.0 sẽ bị hao xuống 1799 ngay ở tick 1. Test dùng 30.02 để thấy vùng an toàn còn ở tick 1 và mất ở tick 2.
+- Giả định thêm (đã ghi trong `assumptions.md`):
+  - đèn `lit: true` mà không có `ever_lit` thì được coi là `ever_lit` true;
+  - chỉ có `fuel > 0` thì đèn sáng;
+  - `target_lantern_id` trỏ tới đèn không tồn tại thì báo lỗi định dạng;
+  - `hasSafeZone(l, tuning)` nhận thêm tham số `tuning`;
+  - đèn còn 1 đơn vị dầu thì hiển thị `fuel: 0` nhưng `lit: true`.
+
+### 10. Opus review Plan 03 (tự chạy lại)
+- **Test cũ bị sửa:** đúng các loại plan cho phép (`all_lit` chuyển sang luật bình minh, thời lượng 300 → 240, thêm field snapshot, `relight: false`, đèn sáng giờ nhận châm dầu). Mỗi test đều có dòng lý do trong CHANGELOG "Tests updated (phase-3)". Không có `.skip` hay `.todo`, không xóa test nào.
+- **Mọi chỗ kiểm tra vùng an toàn đều đi qua `hasSafeZone`.** Bước thắng thua đếm đèn bằng `l.lit` (đúng luật 10).
+- **Scenario do Opus tự viết, so với tính tay:**
+  - Drain: đèn có fuel 29 (1740 đơn vị) mất 6 đơn vị mỗi tick. Kết quả: `fuel_drain` ở tick 60, 120, 180, 240 với fuel 23 / 17 / 11 / 5; `lantern_out` ở tick **290** (1740/6). Tick 291 Bóng Mực về `wander` ✓.
+  - Châm dầu: fuel 10, mang 3. Sau khi hao còn 599, cộng 3×600 = 2399, tức **40.0**. Event `refuel {amount 3, fuel 40}`, điểm 15, carried 0 ✓.
+  - Bình minh: 4 đèn sáng, L2 có fuel 0.5 nên tắt ở tick 30. Ở tick 60 còn 3 đèn sáng ≥ ceil(0.6×5) = 3, kết quả `dawn_survived`. Điểm = (50+99) + (50+49) + (50+19) + 2×50 = **417** ✓.
+  - Sức chứa: đã thắp thành công 3 lần thì capacity 16; 10 lần thì bị chặn ở 20 ✓.
+- Phần web: chỉ kiểm tra được ở mức build (tsc và vite đều qua). Chưa mở game để xem thanh dầu, nhấp nháy và phím `C`.
+- Kết luận: **chấp nhận Plan 03**.

@@ -15,7 +15,7 @@ export interface InputState extends Buttons {
 }
 
 export type GameStatus = 'playing' | 'won' | 'lost';
-export type ShadeStateName = 'spawning' | 'wander' | 'chase' | 'recoil' | 'stunned';
+export type ShadeStateName = 'spawning' | 'wander' | 'chase' | 'recoil' | 'stunned' | 'drain';
 
 export interface PlayerState {
   pos: Vec3;
@@ -35,6 +35,7 @@ export interface PlayerState {
   dashCooldownTicks: number;
   dashDir: [number, number];
   charmTicks: number;
+  successfulLights: number;
 }
 
 export interface CharmState {
@@ -49,6 +50,9 @@ export interface LanternState {
   pos: Vec3;
   lit: boolean;
   deposited: number;
+  fuelUnits: number;
+  everLit: boolean;
+  relitCount: number;
 }
 
 export interface ShadeState {
@@ -70,6 +74,8 @@ export interface ShadeState {
   /** Current wander target and ticks until it is re-picked. */
   wanderTarget: Vec3 | null;
   wanderTicks: number;
+  targetLanternId: string | null;
+  drainTicks: number;
 }
 
 export interface MoteState {
@@ -105,15 +111,18 @@ export interface GameState {
   nextMoteNum: number;
 }
 
-/** The contract events, `name` + `data` exactly as in Test Contract section E and Contract v1.1. */
+/** The contract events, `name` + `data` exactly as in Test Contract section E and Contract v1.2. */
 export type GameEvent =
   | { name: 'mote_picked'; data: { carried: number } }
   | { name: 'deposit'; data: { lantern_id: string; amount: number; deposited: number } }
-  | { name: 'lantern_lit'; data: { lantern_id: string } }
+  | { name: 'lantern_lit'; data: { lantern_id: string; relight: boolean } }
+  | { name: 'refuel'; data: { lantern_id: string; amount: number; fuel: number } }
+  | { name: 'lantern_out'; data: { lantern_id: string } }
+  | { name: 'fuel_drain'; data: { lantern_id: string; shade_id: string; fuel: number } }
   | { name: 'pulse'; data: { stunned_ids: string[] } }
   | { name: 'player_hit'; data: { by: 'shade'; flames: number; dropped: number } | { by: 'fall'; flames: number; dropped: number; lost: number } }
   | { name: 'shade_spawned'; data: { id: string } }
-  | { name: 'game_over'; data: { result: 'won' | 'lost'; reason: 'all_lit' | 'dawn' | 'no_flames' } }
+  | { name: 'game_over'; data: { result: 'won' | 'lost'; reason: 'dawn_survived' | 'dawn' | 'no_flames' } }
   | { name: 'dash'; data: Record<string, never> }
   | { name: 'charm_picked'; data: { charm_id: string; charm_ticks: number } }
   | { name: 'night_start'; data: { night: number } }
@@ -136,12 +145,21 @@ export interface Snapshot {
     grounded: boolean;
     flames: number;
     carried: number;
+    capacity: number;
     invuln: boolean;
     dash_cd_s: number;
     pulse_cd_s: number;
     charm_s: number;
   };
-  lanterns: { id: string; pos: Vec3; lit: boolean; deposited: number }[];
+  lanterns: {
+    id: string;
+    pos: Vec3;
+    lit: boolean;
+    deposited: number;
+    fuel: number;
+    ever_lit: boolean;
+    relit_count: number;
+  }[];
   shades: { id: string; pos: Vec3; state: ShadeStateName }[];
   motes_active: number;
   motes: { id: string; pos: Vec3; kind: 'random' | 'dropped'; ttl_s: number | null }[];

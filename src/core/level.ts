@@ -44,7 +44,15 @@ export const SHADE_SPAWN_POINTS: readonly Vec3[] = ring(37, 12, 15, 30);
 
 /** Great Lanterns L1..L5 at their fixed positions, all unlit and empty. */
 export function buildLanterns(): LanternState[] {
-  return LANTERN_POSITIONS.map((pos, i) => ({ id: `L${i + 1}`, pos: [pos[0], pos[1], pos[2]], lit: false, deposited: 0 }));
+  return LANTERN_POSITIONS.map((pos, i) => ({
+    id: `L${i + 1}`,
+    pos: [pos[0], pos[1], pos[2]],
+    lit: false,
+    deposited: 0,
+    fuelUnits: 0,
+    everLit: false,
+    relitCount: 0,
+  }));
 }
 
 /**

@@ -3,6 +3,7 @@ import { defaultInput } from '../core/input';
 import { createGame, TICK_RATE } from '../core/sim';
 import { TUNING } from '../core/tuning';
 import type { InputState } from '../core/types';
+import { toggleColorBlind } from './colorblind';
 import { createHud } from './hud';
 import { createRenderer } from './render';
 
@@ -46,6 +47,7 @@ const GAME_KEYS = new Set([
   'ShiftRight',
   'KeyP',
   'Escape',
+  'KeyC',
 ]);
 
 window.addEventListener('keydown', (e) => {
@@ -55,6 +57,10 @@ window.addEventListener('keydown', (e) => {
   held.add(e.code);
   latched.add(e.code);
   if (e.code === 'KeyR') restart();
+  if (e.code === 'KeyC') {
+    toggleColorBlind();
+    hud.setColorBlind();
+  }
 });
 window.addEventListener('keyup', (e) => held.delete(e.code));
 window.addEventListener('blur', () => held.clear());

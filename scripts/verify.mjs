@@ -1,5 +1,5 @@
 // One-command verification: build, unit/CLI tests, then run every scenario fixture twice and compare bytes.
-// Writes docs/proof/verify-latest.md and docs/proof/phase-1.md (generated, never hand-edited). Exit 0 only if
+// Writes docs/proof/verify-latest.md and docs/proof/phase-1.md, phase-2.md, phase-3.md (generated, never hand-edited). Exit 0 only if
 // everything passes.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,6 +9,7 @@ import { join } from 'node:path';
 const PROOF = 'docs/proof/verify-latest.md';
 const PHASE_PROOF = 'docs/proof/phase-1.md';
 const PHASE2_PROOF = 'docs/proof/phase-2.md';
+const PHASE3_PROOF = 'docs/proof/phase-3.md';
 const OUT_DIR = 'out/verify';
 const SEED = '1';
 const TICKS = '600';
@@ -33,6 +34,7 @@ function capture(command, args) {
 rmSync(PROOF, { force: true });
 rmSync(PHASE_PROOF, { force: true });
 rmSync(PHASE2_PROOF, { force: true });
+rmSync(PHASE3_PROOF, { force: true });
 rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -179,6 +181,35 @@ const PHASE2_REQUIREMENTS = [
     scenarios: ['pickup-basic', 'deposit-light', 'pulse-stun', 'shade-chase', 'safe-zone-block', 'fall-respawn', 'determinism'] },
 ];
 
+const P3 = 'gameplay\\.test\\.ts :: phase 3 \\(v1\\.2\\) > ';
+const PHASE3_REQUIREMENTS = [
+  { id: 'Rule 1', text: 'Lighting: relight_cost 5 for an ever_lit lantern (+40, relight: true), 10 for the first light (+100)',
+    tests: [new RegExp(`${P3}relight`), /gameplay\.test\.ts :: deposit > deposit-light/],
+    scenarios: ['relight', 'deposit-light'] },
+  { id: 'Rule 2', text: 'Decay: 1 unit/tick for every lit lantern; 5 units/tick per draining shade; fuel_drain every 60 ticks per shade',
+    tests: [new RegExp(`${P3}fuel-decay`), new RegExp(`${P3}drain: a wandering`)],
+    scenarios: ['fuel-decay', 'drain'] },
+  { id: 'Rule 3', text: 'Out: fuel <= 0 right after stage 2 -> lit false, deposited 0, ever_lit true, lantern_out',
+    tests: [new RegExp(`${P3}fuel-decay`)], scenarios: ['fuel-decay'] },
+  { id: 'Rule 4', text: 'Refuel: lit lanterns below full take motes (600 units each), partial carried, nothing carried = no event',
+    tests: [new RegExp(`${P3}refuel`)], scenarios: ['refuel', 'refuel-partial-carried'] },
+  { id: 'Rule 5', text: 'Safe zone only while fuel >= 30 (1800 units); below it shades walk in',
+    tests: [new RegExp(`${P3}low-fuel-no-safe-zone`)], scenarios: ['low-fuel-no-safe-zone'] },
+  { id: 'Rule 6', text: 'Wander targeting: nearest weak lit lantern, else nearest unlit lantern, drain within 2 m',
+    tests: [new RegExp(`${P3}drain: a wandering`)], scenarios: ['drain'] },
+  { id: 'Rule 7', text: 'Drain state: no movement, no hits; Mây within 6 m -> chase; lantern out/healed/far -> wander',
+    tests: [new RegExp(`${P3}drain: `)], scenarios: ['drain'] },
+  { id: 'Rule 8', text: 'Pulse score: +5 per stunned shade, +10 more when it was draining',
+    tests: [new RegExp(`${P3}pulse-drain-bonus`)], scenarios: ['pulse-drain-bonus'] },
+  { id: 'Rule 9', text: 'Capacity: min(20, 10 + 2 x successful lights), used by pickup and shown in the snapshot',
+    tests: [new RegExp(`${P3}capacity-growth`)], scenarios: ['capacity-growth'] },
+  { id: 'Rule 10', text: 'Win/lose at dawn: >= ceil(0.6 x 5) lit = dawn_survived with bonus, else dawn; no_flames first; no early win',
+    tests: [new RegExp(`${P3}(dawn-win|dawn-lose|no-flames-on-dawn-tick|no-early-win)`), /rules\.test\.ts :: ending the night/],
+    scenarios: ['dawn-win', 'dawn-lose', 'no-flames-on-dawn-tick', 'no-early-win', 'win-all-lit'] },
+  { id: 'Rule 11', text: 'Durations: night 1/2/3 = 240 / 270 / 300 s; contract version 1.2 and the new tuning keys',
+    tests: [/tuning\.test\.ts :: /, /sim\.test\.ts :: tick model/], scenarios: [] },
+];
+
 const eventCell = (counts) => Object.entries(counts).map(([k, n]) => `${k} x${n}`).join(', ') || '-';
 
 function renderPhaseProof(title, requirements) {
@@ -232,11 +263,14 @@ function renderPhaseProof(title, requirements) {
 
 const p1 = renderPhaseProof('Phase 1 proof: requirements to evidence', REQUIREMENTS);
 const p2 = renderPhaseProof('Phase 2 proof: requirements to evidence', PHASE2_REQUIREMENTS);
+const p3 = renderPhaseProof('Phase 3 proof: requirements to evidence', PHASE3_REQUIREMENTS);
 
 mkdirSync('docs/proof', { recursive: true });
 writeFileSync(PROOF, md);
 writeFileSync(PHASE_PROOF, p1.md);
 writeFileSync(PHASE2_PROOF, p2.md);
+writeFileSync(PHASE3_PROOF, p3.md);
 if (!p1.ok) fail(`a requirement in ${PHASE_PROOF} is not fully covered (see the table)`);
 if (!p2.ok) fail(`a requirement in ${PHASE2_PROOF} is not fully covered (see the table)`);
-console.log(`\nverify OK -> ${PROOF}, ${PHASE_PROOF}, ${PHASE2_PROOF}`);
+if (!p3.ok) fail(`a requirement in ${PHASE3_PROOF} is not fully covered (see the table)`);
+console.log(`\nverify OK -> ${PROOF}, ${PHASE_PROOF}, ${PHASE2_PROOF}, ${PHASE3_PROOF}`);

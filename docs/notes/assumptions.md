@@ -125,3 +125,17 @@ Không khoá nào là `null`: game dùng đủ mọi khái niệm của contract
 - **Hướng lướt và quy tắc trên không:** hướng lướt lấy theo hướng di chuyển thế giới chuẩn hoá nếu có, ngược lại theo `facing`; trong 12 tick lướt thì vận tốc thẳng đứng = 0 và không chịu trọng lực.
 - **Trường kịch bản bùa:** `charms` trong scenario thay thế danh sách bùa mặc định (Đêm 1 mặc định không có bùa); gồm `id` duy nhất, `pos`, `available` (mặc định true) và `respawn_ticks` (mặc định 0).
 - **Gió Lạc được parse nhưng không mô phỏng:** `drifters` được kiểm tra định dạng mảng các vật thể có `pos` Vec3 và bỏ qua, không mô phỏng trong Đêm 1; snapshot luôn trả về `drifters: []`.
+
+## Phase 3 — Đèn cạn dầu
+
+- **Đơn vị nhiên liệu:** số nguyên 1/60; đầy = `fuel_max × 60` = 6000, một đốm = `fuel_per_mote × 60` = 600, ngưỡng yếu = `low_fuel_threshold × 60` = 1800; tự hao = `fuel_decay_per_s` đơn vị/tick, Bóng Mực hút `drain_per_s` đơn vị/tick; tất cả tính từ TUNING một lần, không có hằng số cứng. Xuất ra `fuel` làm tròn 1 chữ số thập phân (`0` khi đèn tắt); làm tròn xảy ra ở đầu ra, nên đèn còn 1 đơn vị vẫn `lit: true` nhưng `fuel: 0`.
+- **Thứ tự trong tick:** tự hao và hút ở bước 2, đèn tắt ngay sau bước 2, nên châm dầu (bước 5) luôn thấy đèn đã hao 1 đơn vị: đèn 50.0 nhận `ceil((6000 − 2999) / 600) = 6` đốm ở tick 1 (không phải 5). Một đèn đang sáng gần như không bao giờ "đầy" ở bước 5.
+- **`fuel_drain` theo từng Bóng Mực:** mỗi Bóng Mực có bộ đếm `drainTicks` riêng (+1 mỗi tick ở trạng thái `drain`, về 0 khi vào/ra); sự kiện phát khi `drainTicks % 60 === 0`, `fuel` là giá trị sau khi trừ của chính Bóng Mực đó (các Bóng Mực xử lý theo id tăng dần).
+- **Đi về đèn tắt:** Bóng Mực `wander` đi về đèn yếu gần nhất (hòa thì id nhỏ), nếu không có thì về đèn tắt gần nhất; ở đèn tắt chỉ đứng gần đó. Khi có mục tiêu đèn, Bóng Mực không bốc thăm điểm ngẫu nhiên (luồng `shade_ai` không bị dùng). Đây là hành vi mới so với Phase 1–2 nên một số đường đi lang thang đổi.
+- **Tầm hút:** kiểm tra khoảng cách XZ ≤ 2.0 tới đèn mục tiêu *trước* khi di chuyển trong tick đó; đủ gần thì chuyển `drain` và đứng yên ngay.
+- **Thoát `drain`:** Mây trong 6.0 m (kể cả khi bằng) → `chase` (có ưu tiên hơn việc đèn tắt); Bóng Mực đã chuyển trạng thái thì vẫn di chuyển ngay trong tick đó. `drain` không bị phát hiện/mất dấu như `wander`/`chase`.
+- **Scenario:** `shades[].state: "drain"` bắt buộc có `target_lantern_id`, và id phải là đèn có thật khi dựng màn (sai → `FormatError`). Đèn `lit: true` không có `fuel` → 100; `lit: false` → 0; chỉ có `fuel` > 0 thì đèn sáng. Đèn đặt sáng sẵn mà không nói `ever_lit` thì coi `ever_lit` = true (đèn sáng thì đã từng sáng). Đèn đặt sáng sẵn không tính vào số lần thắp thành công (sức chứa).
+- **Vùng an toàn bật:** đèn vừa sáng hoặc vừa được châm từ < 30 lên ≥ 30 thì Bóng Mực trong vùng bị đẩy ra như Phase 1 (≤ 30 tick). Vì tự hao chạy trước bước kiểm tra, đèn đặt `fuel: 30.0` mất vùng an toàn ngay ở tick 1; muốn thấy mốc "đúng 30.0" phải dùng `fuel: 30.02` (1801 đơn vị).
+- **Thưởng bình minh:** `Σ (50 + floor(fuelUnits / 60))` trên các đèn đang sáng, cộng `flames × 50`; chỉ khi `dawn_survived`. Số đèn cần = `ceil(0.6 × 5) = 3`.
+- **Thắp lại không cần "đủ" lại điểm cũ:** đèn tắt đặt `deposited` về 0; đủ `relight_cost` thì sáng đầy 100 và `relit_count` +1.
+

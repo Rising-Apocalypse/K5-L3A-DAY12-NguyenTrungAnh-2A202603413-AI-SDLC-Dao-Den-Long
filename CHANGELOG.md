@@ -1,5 +1,54 @@
 # Changelog
 
+## [phase-3] Contract v1.2 "Đèn cạn dầu" (Đêm 1)
+
+### Thêm
+- Nhiên liệu đèn: số nguyên đơn vị 1/60 (đầy = 6000), tự hao 1 đơn vị mỗi tick, mỗi đom đóm châm thêm 10 nhiên liệu (600 đơn vị).
+- Châm dầu (`refuel`) cho đèn đang sáng chưa đầy; đèn cạn dầu thì tắt (`lantern_out`) và có thể thắp lại với `relight_cost` 5 đốm (`lantern_lit` có `relight: true`, +40 điểm).
+- Trạng thái Bóng Mực mới `drain`: Bóng Mực đi tới đèn yếu (nhiên liệu < 30), đứng cách ≤ 2 m và hút 5 nhiên liệu/giây; sự kiện `fuel_drain` mỗi 60 tick cho mỗi Bóng Mực.
+- Sức chứa tăng dần: `capacity = min(20, 10 + 2 × số lần thắp thành công)`.
+- Scenario: `lanterns[].fuel`, `lanterns[].ever_lit`, `player.successful_lights`, `shades[].target_lantern_id`, `shades[].state = "drain"`.
+- Snapshot: đèn có `fuel`, `ever_lit`, `relit_count`; `player.capacity` ngay sau `carried`.
+- Web: thanh nhiên liệu, đèn nhấp nháy khi nhiên liệu < 30, HUD `carried / capacity` và số đèn cần thắp, phím `C` bật bảng màu dễ phân biệt.
+
+### Thay đổi phá tương thích
+- [THAY THẾ] Chi phí thắp đèn: 10 đốm lần đầu, 5 đốm (`relight_cost`) nếu đèn đã từng sáng (`ever_lit`); điểm thắp lại là 40 thay vì 100.
+- [THAY THẾ] Đèn đang sáng không còn "không nhận gì": nhận đom đóm để châm dầu (mỗi đốm +5 điểm, +10 nhiên liệu, tối đa 100).
+- [THAY THẾ] Vùng an toàn chỉ có khi đèn sáng và nhiên liệu ≥ 30 (đúng 30.0 vẫn còn); Bóng Mực không còn "không bao giờ vào" vùng của đèn yếu.
+- [THAY THẾ] Bóng Mực `wander` đi về đèn yếu gần nhất, nếu không có thì về đèn tắt gần nhất, thay vì chỉ đi ngẫu nhiên.
+- [THAY THẾ] Điểm pulse: +5 mỗi Bóng Mực, +15 nếu Bóng Mực đó đang `drain`.
+- [THAY THẾ] Luật thắng/thua: bỏ thắng sớm `all_lit`; hết giờ mà số đèn sáng ≥ `ceil(0.6 × 5) = 3` thì thắng `dawn_survived`, ngược lại thua `dawn`; hết Ngọn Lửa luôn là `no_flames` và được xét trước, kể cả đúng tick bình minh.
+- Công thức điểm: nạp/châm `per_mote` = 5 mỗi đốm (trước đây 10), thắp lần đầu +100, thắp lại +40, thưởng bình minh = Σ mỗi đèn sáng (50 + floor(nhiên liệu)) + 50 × số Ngọn Lửa còn lại; thưởng theo giây còn lại bỏ (`per_second_left` = 0).
+- Thời lượng Đêm: `night1_duration_s` 300 → 240 (Đêm 2 = 270, Đêm 3 = 300).
+- `game_over.reason` không còn `all_lit`, thay bằng `dawn_survived`.
+- `lantern_lit` có thêm `relight`; sự kiện mới `refuel`, `lantern_out`, `fuel_drain`.
+- Snapshot: `lanterns[]` thêm `fuel`, `ever_lit`, `relit_count`; `player` thêm `capacity` sau `carried`; trạng thái Bóng Mực có thêm `drain`.
+- `contract_version` 1.1 → 1.2; `game.contract.json` thêm 8 khoá tuning mới.
+
+### Tests updated (phase-3)
+- `tests/unit/tuning.test.ts` — `contract_version`: kỳ vọng `'1.1'` → `'1.2'` (contract nâng phiên bản).
+- `tests/unit/sim.test.ts`:
+  - `N steps -> tick N, sim_tick N, time_left_s = start - N/60`: `298.333` → `238.333` (240 − 100/60); luật 11, thời lượng 240 s.
+  - `snapshot has the contract key order`: thêm khoá `capacity` của `player` và `fuel, ever_lit, relit_count` của `lanterns[]`; §3 (snapshot).
+  - `scenario build emits no events and awards no points (even for a pre-lit lantern)`: snapshot đèn L3 thêm `fuel: 100, ever_lit: true, relit_count: 0`; §3. Đèn đặt sẵn `lit: true` mà không có `ever_lit` thì `ever_lit` = true (giả định, xem assumptions).
+  - `lantern overrides apply by id; the others keep their defaults`: trạng thái đèn thêm `fuelUnits: 0, everLit: false, relitCount: 0`; kiểu `LanternState` đổi.
+- `tests/unit/rules.test.ts`:
+  - `a partly filled lantern takes only what is missing (lantern_cost - deposited), then lights`: sự kiện `lantern_lit` thêm `relight: false`; §3.
+  - `goes to the nearest unlit lantern in reach; lit lanterns are skipped` → `goes to the nearest lantern in reach that can take motes: a lit one below full is refuelled, not ignored`: cũ = đèn sáng bị bỏ qua và nạp vào L3; mới = đèn sáng L2 (đã hao 1 đơn vị ở bước 2) là gần nhất nên được châm dầu (`refuel` amount 1, fuel 100), không có `deposit`; luật 4.
+  - `a shade cannot hit while Mây lights a lantern beside it: lighting evicts it first ...`: cũ = có `game_over all_lit` khi thắp đèn cuối; mới = không có `game_over` (không thắng sớm); luật 10. Ý chính (không bị đánh) giữ nguyên.
+  - `lighting the last lantern on the tick the time runs out is a win (all_lit beats dawn), with no seconds bonus` → `... is a dawn win with the dawn bonus`: cũ = `all_lit`, điểm 10×10+100+3×50 (giá trị điểm theo luật cũ); mới = `dawn_survived`, điểm 1046 = (10×5 + 100) + (50+100) + 4×(50+99) + 3×50; luật 10.
+  - `the win bonus is floor(time_left_s) * per_second_left + flames * per_flame_left, added before game_over` → `there is no seconds bonus and no early win: ...`: cũ = thưởng giây còn lại + ngọn lửa khi thắp đèn cuối; mới = chỉ 150 điểm (50 + 100), game vẫn `playing`; luật 10 (bỏ thắng sớm và thưởng thời gian).
+  - `a game that starts with 0 flames, 0 seconds or all lanterns lit ends at the first step` → `... 0 flames or 0 seconds ends at the first step (all lanterns lit does not)`: cũ = 5 đèn sáng sẵn thắng `all_lit` ngay bước đầu; mới = vẫn `playing`, điểm 0; luật 10.
+- `tests/cli/cli.test.ts`:
+  - `snapshot fields follow the contract: key order, time_left_s, rounding, motes`: `time_left_s` `299.5` → `239.5`; luật 11.
+  - `plays the contract sample scenario + inputs cleanly`: đèn L1 thêm `fuel: 0, ever_lit: false, relit_count: 0`; §3.
+  - `a night without shades and without actions ends exactly at dawn: tick 18000, ...` → `... tick 14400, ...`: tick kết thúc `18000` → `14400` (240 s × 60); luật 11.
+- `tests/cli/gameplay.test.ts`:
+  - `deposit-light: a full lantern lights up: ...`: `lantern_lit` thêm `relight: false`; §3.
+  - `win-all-lit: lighting the last lantern wins at once; score adds seconds left and flames left` → `win-all-lit: 3 of 5 lanterns lit at dawn is a dawn_survived win; score = sum(50 + floor(fuel)) + flames * 50`: cũ = thắp đèn cuối thì thắng `all_lit` ngay tick 1; mới = 3 đèn sáng, `time_left_s: 1`, 60 tick → `dawn_survived`, điểm 597 = 3×(50+99) + 3×50; luật 10. Fixture `tests/scenarios/win-all-lit/` được viết lại tương ứng (đổi nội dung, giữ tên).
+- Test mới (không phải sửa): 14 test trong `describe('phase 3 (v1.2)')` của `tests/cli/gameplay.test.ts` với 12 fixture mới trong `tests/scenarios/`; test parse scenario mới trong `tests/unit/scenario.test.ts`.
+- Không test nào bị xóa, `.skip` hay `.todo`.
+
 ## [phase-2] Contract v1.1 (Đêm 1)
 
 ### Thêm

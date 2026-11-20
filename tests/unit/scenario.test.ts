@@ -91,6 +91,23 @@ describe('parseScenario', () => {
     expect(s.windEnabled).toBe(false);
   });
 
+  it('parses Phase 3 (v1.2) scenario fields', () => {
+    const s = parseScenario({
+      player: {
+        successful_lights: 2,
+      },
+      shades: [
+        { pos: [2, 0, 2], state: 'drain', target_lantern_id: 'L1' },
+      ],
+      lanterns: [
+        { id: 'L1', fuel: 45.5, ever_lit: true },
+      ],
+    });
+    expect(s.player?.successfulLights).toBe(2);
+    expect(s.shades).toEqual([{ pos: [2, 0, 2], state: 'drain', targetLanternId: 'L1' }]);
+    expect(s.lanterns).toEqual([{ id: 'L1', fuel: 45.5, everLit: true }]);
+  });
+
   it.each([
     ['top level is an array', []],
     ['top level is a string', 'scenario'],
@@ -106,6 +123,8 @@ describe('parseScenario', () => {
     ['player.dash_cd_ticks negative', { player: { dash_cd_ticks: -1 } }],
     ['player.pulse_cd_ticks negative', { player: { pulse_cd_ticks: -1 } }],
     ['player.charm_ticks negative', { player: { charm_ticks: -1 } }],
+    ['player.successful_lights negative', { player: { successful_lights: -1 } }],
+    ['player.successful_lights fractional', { player: { successful_lights: 1.5 } }],
     ['random_motes not boolean', { random_motes: 'no' }],
     ['random_shades not boolean', { random_shades: 0 }],
     ['motes not an array', { motes: 'none' }],
@@ -120,6 +139,9 @@ describe('parseScenario', () => {
     ['shade ids duplicated', { shades: [{ pos: [0, 0, 0], id: 'S1' }, { pos: [1, 0, 0], id: 'S1' }] }],
     ['shade.state invalid', { shades: [{ pos: [0, 0, 0], state: 'flying' }] }],
     ['shade.state_ticks_left negative', { shades: [{ pos: [0, 0, 0], state_ticks_left: -1 }] }],
+    ['shade with state drain missing target_lantern_id', { shades: [{ pos: [0, 0, 0], state: 'drain' }] }],
+    ['shade.target_lantern_id not a string', { shades: [{ pos: [0, 0, 0], target_lantern_id: 123 }] }],
+    ['shade.target_lantern_id empty', { shades: [{ pos: [0, 0, 0], target_lantern_id: '' }] }],
     ['lanterns not an array', { lanterns: 'L1' }],
     ['lantern without id', { lanterns: [{ pos: [0, 0, 0] }] }],
     ['lantern id malformed', { lanterns: [{ id: 'X1' }] }],
@@ -128,6 +150,10 @@ describe('parseScenario', () => {
     ['lantern lit not boolean', { lanterns: [{ id: 'L1', lit: 'yes' }] }],
     ['lantern deposited negative', { lanterns: [{ id: 'L1', deposited: -1 }] }],
     ['lantern deposited fractional', { lanterns: [{ id: 'L1', deposited: 0.5 }] }],
+    ['lantern fuel negative', { lanterns: [{ id: 'L1', fuel: -1 }] }],
+    ['lantern fuel > 100', { lanterns: [{ id: 'L1', fuel: 101 }] }],
+    ['lantern fuel not a number', { lanterns: [{ id: 'L1', fuel: '50' }] }],
+    ['lantern ever_lit not boolean', { lanterns: [{ id: 'L1', ever_lit: 'yes' }] }],
     ['time_left_s negative', { time_left_s: -1 }],
     ['time_left_s a string', { time_left_s: '300' }],
     ['time_left_s infinite', { time_left_s: Number.POSITIVE_INFINITY }],

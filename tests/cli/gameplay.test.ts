@@ -99,7 +99,7 @@ describe('deposit', () => {
     const amount = Math.min(carried, TUNING.lantern_cost);
     expect(r.events.filter((e) => e.name !== 'night_start').map((e) => [e.tick, e.name, e.data])).toEqual([
       [1, 'deposit', { lantern_id: 'L1', amount, deposited: amount }],
-      [1, 'lantern_lit', { lantern_id: 'L1' }],
+      [1, 'lantern_lit', { lantern_id: 'L1', relight: false }],
     ]);
     expect(amount).toBe(TUNING.lantern_cost);
     expect(r.at(1).lanterns[0]).toMatchObject({ id: 'L1', lit: true, deposited: TUNING.lantern_cost });
@@ -352,27 +352,16 @@ describe('falling', () => {
 });
 
 describe('ending the night', () => {
-  it('win-all-lit: lighting the last lantern wins at once; score adds seconds left and flames left', () => {
+  it('win-all-lit: 3 of 5 lanterns lit at dawn is a dawn_survived win; score = sum(50 + floor(fuel)) + flames * 50', () => {
     const r = run.fixture('win-all-lit', { ticks: 300 });
-    const scenario = run.load('win-all-lit', 'scenario.json');
-    const carried = scenario.player.carried as number;
-    const flames = scenario.player.flames as number;
-    const timeLeft = (scenario.time_left_s as number) - 1 / 60; // after the single step it took
-    const expectedScore =
-      Math.min(carried, TUNING.lantern_cost) * S.per_mote + S.per_lantern + Math.floor(timeLeft) * S.per_second_left + flames * S.per_flame_left;
-
+    // 60 ticks of decay: each lit lantern has 6000 - 60 = 5940 units = 99.0 fuel -> floor 99.
+    // Score = 3 * (50 + 99) + 3 flames * 50 = 447 + 150 = 597. Nothing was deposited, so no other points.
     expect(r.events.filter((e) => e.name !== 'night_start').map((e) => [e.tick, e.name, e.data])).toEqual([
-      [1, 'deposit', { lantern_id: 'L1', amount: TUNING.lantern_cost, deposited: TUNING.lantern_cost }],
-      [1, 'lantern_lit', { lantern_id: 'L1' }],
-      [1, 'game_over', { result: 'won', reason: 'all_lit' }],
+      [60, 'game_over', { result: 'won', reason: 'dawn_survived' }],
     ]);
-    expect(r.end).toEqual({ type: 'end', ticks: 1, state: 'won', score: expectedScore });
-    expect(r.at(1)).toMatchObject({ state: 'won', score: expectedScore });
-    expect(r.at(1).lanterns.every((l: any) => l.lit)).toBe(true);
-    // Pre-lit lanterns gave nothing: only the one lit during play counts for per_lantern.
-    expect(expectedScore - Math.floor(timeLeft) * S.per_second_left - flames * S.per_flame_left).toBe(
-      TUNING.lantern_cost * S.per_mote + S.per_lantern,
-    );
+    expect(r.end).toEqual({ type: 'end', ticks: 60, state: 'won', score: 597 });
+    expect(r.at(60)).toMatchObject({ state: 'won', score: 597, time_left_s: 0 });
+    expect(r.at(60).lanterns.map((l: any) => [l.lit, l.fuel])).toEqual([[true, 99], [true, 99], [true, 99], [false, 0], [false, 0]]);
   });
 
   it('dawn: when time_left_s runs out the game is lost with reason "dawn" and stops', () => {
@@ -591,5 +580,169 @@ describe('phase 2 (v1.1)', () => {
     const hits = r.named('player_hit');
     expect(hits).toHaveLength(1);
     expect(hits[0]!.tick).toBe(60);
+  });
+});
+
+// Phase 3 (Contract v1.2). Fuel is stored in 1/60 units: full = 6000, 1 mote = 600, low threshold = 1800, decay 1 unit
+// per tick, 5 units per tick per draining shade. Stage 2 (decay) runs before stage 5 (interact), so a lit lantern has
+// already lost 1 unit when Mây refuels it. Expected numbers below are worked out by hand from those rules.
+describe('phase 3 (v1.2)', () => {
+  const lanternAt = (r: ReturnType<typeof run.fixture>, tick: number, i = 0) => r.at(tick).lanterns[i];
+  const rest = (r: ReturnType<typeof run.fixture>) => r.events.filter((e) => e.name !== 'night_start').map((e) => [e.tick, e.name, e.data]);
+
+  it('fuel-decay: a lit lantern with fuel 1.0 (60 units) goes out at tick 60, deposit reset, ever_lit true', () => {
+    const r = run.fixture('fuel-decay', { ticks: 100 });
+    // 60 units - 1 per tick -> 0 at the 60th step (tick 60).
+    expect(rest(r)).toEqual([[60, 'lantern_out', { lantern_id: 'L1' }]]);
+    expect(lanternAt(r, 30)).toEqual({ id: 'L1', pos: [0, 0, 25], lit: true, deposited: 10, fuel: 0.5, ever_lit: true, relit_count: 0 }); // 30 units
+    expect(lanternAt(r, 59)).toMatchObject({ lit: true, fuel: 0 }); // 1 unit = 0.017, shown as 0.0 but still lit
+    expect(lanternAt(r, 60)).toEqual({ id: 'L1', pos: [0, 0, 25], lit: false, deposited: 0, fuel: 0, ever_lit: true, relit_count: 0 });
+  });
+
+  it('relight: an ever_lit lantern needs relight_cost (5) motes: lantern_lit relight true, +5*5 + 40', () => {
+    const r = run.fixture('relight', { ticks: 10 });
+    expect(rest(r)).toEqual([
+      [1, 'deposit', { lantern_id: 'L1', amount: 5, deposited: 5 }],
+      [1, 'lantern_lit', { lantern_id: 'L1', relight: true }],
+    ]);
+    // 5 motes * per_mote 5 = 25, + RELIGHT_SCORE 40 = 65 (not the 100 of a first light).
+    expect(r.at(1).score).toBe(65);
+    expect(lanternAt(r, 1)).toEqual({ id: 'L1', pos: [0, 0, 25], lit: true, deposited: 5, fuel: 100, ever_lit: true, relit_count: 1 });
+    expect(r.at(1).player).toMatchObject({ carried: 0, capacity: 12 }); // one successful light: 10 + 2
+  });
+
+  it('refuel: fuel 50, carried 10 -> tick-1 decay leaves 2999 units, ceil(3001 / 600) = 6 motes fill it to 100', () => {
+    const r = run.fixture('refuel', { ticks: 10 });
+    // 50.0 = 3000 units; stage 2 takes 1 -> 2999; missing 6000 - 2999 = 3001 = 5.0017 motes -> 6 used; 2999 + 3600 caps at 6000.
+    expect(rest(r)).toEqual([[1, 'refuel', { lantern_id: 'L1', amount: 6, fuel: 100 }]]);
+    expect(r.at(1).player.carried).toBe(4); // 10 - 6
+    expect(r.at(1).score).toBe(30); // 6 * per_mote 5
+    expect(lanternAt(r, 1)).toMatchObject({ lit: true, fuel: 100, relit_count: 0 });
+    expect(r.named('lantern_lit')).toEqual([]);
+  });
+
+  it('refuel: nothing carried -> no event, no score', () => {
+    const scenario = run.load('refuel', 'scenario.json');
+    scenario.player.carried = 0;
+    const r = run.play(scenario, run.load('refuel', 'inputs.json'), { ticks: 10 });
+    expect(rest(r)).toEqual([]);
+    expect(r.end.score).toBe(0);
+  });
+
+  it('refuel-partial-carried: fuel 50, carried 2 -> uses 2 motes, fuel 2999 + 2 * 600 = 4199 units = 70.0', () => {
+    const r = run.fixture('refuel-partial-carried', { ticks: 10 });
+    expect(rest(r)).toEqual([[1, 'refuel', { lantern_id: 'L1', amount: 2, fuel: 70 }]]);
+    expect(r.at(1).player.carried).toBe(0);
+    expect(r.at(1).score).toBe(10); // 2 * 5
+    expect(lanternAt(r, 1).fuel).toBe(70);
+  });
+
+  it('low-fuel-no-safe-zone: below 30.0 a lit lantern gives no safe zone; at 30.0 (after decay) it still does', () => {
+    // Shade starts exactly on the zone edge (6.0 m from L1) chasing Mây, who stands on L1. After step 1 it is 4/60 m closer.
+    const dist = (r: ReturnType<typeof run.fixture>, t: number) => xz(r.at(t).shades[0].pos, [0, 0, 25]);
+    const low = run.fixture('low-fuel-no-safe-zone', { ticks: 300 }); // 29.9 -> 1794 -> 1793 units after decay: no zone
+    expect(dist(low, 1)).toBeCloseTo(6 - 4 / 60, 3);
+    expect(low.named('player_hit').length).toBeGreaterThan(0); // the shade walks in and hits Mây
+    // 30.02 = 1801 units; after the tick-1 decay exactly 1800 = 30.0 -> the zone is still on and the shade is held at the edge.
+    const scenario = run.load('low-fuel-no-safe-zone', 'scenario.json');
+    scenario.lanterns[0].fuel = 30.02;
+    const edge = run.play(scenario, { frames: [] }, { ticks: 2 });
+    expect(dist(edge, 1)).toBeGreaterThanOrEqual(TUNING.safe_radius);
+    // Tick 2: 1799 units -> zone off, the shade steps inside.
+    expect(dist(edge, 2)).toBeLessThan(TUNING.safe_radius);
+    // 30.0 exactly = 1800 units loses the zone on the very first decay (stage 2 runs before shades move).
+    scenario.lanterns[0].fuel = 30.0;
+    const exact = run.play(scenario, { frames: [] }, { ticks: 1 });
+    expect(dist(exact, 1)).toBeLessThan(TUNING.safe_radius);
+  });
+
+  it('drain: a wandering shade within 2 m of a weak lantern drains it: 6 fuel/s, fuel_drain every 60 ticks, out at tick 291', () => {
+    const r = run.fixture('drain', { ticks: 320 });
+    // Fuel 29 = 1740 units. Tick 1: decay -> 1739, the shade (1 m away) switches to drain at stage 8.
+    expect(r.at(1).shades[0]).toEqual({ id: 'S1', pos: [0, 1, 26], state: 'drain' });
+    expect(lanternAt(r, 1).fuel).toBe(29); // 1739 / 60 = 28.98
+    // From tick 2 on: -1 decay -5 drain = -6 units per tick. Tick 2: 1733 / 60 = 28.88 -> 28.9.
+    expect(lanternAt(r, 2).fuel).toBe(28.9);
+    // fuel_drain when drainTicks % 60 === 0, i.e. ticks 61, 121, 181, 241. Units there: 1739 - 6*60 = 1379 (22.98 -> 23.0),
+    // 1019 (16.98 -> 17.0), 659 (10.98 -> 11.0), 299 (4.98 -> 5.0). That is exactly 6.0 fuel per second.
+    expect(r.named('fuel_drain').map((e) => [e.tick, e.data])).toEqual([
+      [61, { lantern_id: 'L1', shade_id: 'S1', fuel: 23 }],
+      [121, { lantern_id: 'L1', shade_id: 'S1', fuel: 17 }],
+      [181, { lantern_id: 'L1', shade_id: 'S1', fuel: 11 }],
+      [241, { lantern_id: 'L1', shade_id: 'S1', fuel: 5 }],
+    ]);
+    // 1739 - 6 * 289 = 5 units at tick 290, -1 at tick 291 -> out. The shade drops back to wander (target unlit).
+    expect(r.at(290).lanterns[0].lit).toBe(true);
+    expect(r.named('lantern_out')).toEqual([{ type: 'event', tick: 291, name: 'lantern_out', data: { lantern_id: 'L1' } }]);
+    expect(r.at(291).shades[0].state).toBe('wander');
+    expect(r.named('player_hit')).toEqual([]); // drain shades never hit
+  });
+
+  it('drain: Mây within 6 m (inclusive) turns a draining shade into a chase; at 6.5 m it keeps draining', () => {
+    const base = (z: number) => ({
+      player: { pos: [0, 0, z], carried: 0, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      shades: [{ id: 'S1', pos: [0, 1, 26], state: 'drain', target_lantern_id: 'L1' }],
+      lanterns: [{ id: 'L1', pos: [0, 0, 25], lit: true, fuel: 29, deposited: 10 }],
+    });
+    expect(run.play(base(20), { frames: [] }, { ticks: 1 }).at(1).shades[0].state).toBe('chase'); // exactly 6.0
+    expect(run.play(base(19.5), { frames: [] }, { ticks: 1 }).at(1).shades[0].state).toBe('drain'); // 6.5
+  });
+
+  it('pulse-drain-bonus: stunning a draining shade scores 5 + 10, a plain one 5; the stun stops the drain', () => {
+    const r = run.fixture('pulse-drain-bonus', { ticks: 5 });
+    expect(r.named('pulse')[0]!.data).toEqual({ stunned_ids: ['S1', 'S2'] });
+    expect(r.at(1).score).toBe(20); // S1: 5 + 10, S2: 5
+    expect(r.at(1).shades.map((s: any) => s.state)).toEqual(['stunned', 'stunned']);
+    // Tick 1 still drains (stage 2 is before the pulse): 1740 - 1 - 5 = 1734 -> 28.9; afterwards only decay: tick 2 = 1733 -> 28.9.
+    expect(lanternAt(r, 1).fuel).toBe(28.9);
+    expect(lanternAt(r, 2).fuel).toBe(28.9); // still draining would give 1728 -> 28.8
+  });
+
+  it('capacity-growth: one successful light raises capacity from 10 to 12 and pickup obeys it', () => {
+    const r = run.fixture('capacity-growth', { ticks: 5 });
+    expect(r.at(0).player.capacity).toBe(10);
+    expect(r.at(1).player).toMatchObject({ carried: 0, capacity: 12 }); // light at tick 1: 10 + 2 * 1
+    expect(r.at(1).motes_active).toBe(13); // full at 10 on tick 1 before the light: nothing was picked
+    // Tick 2: 13 motes in reach, room for 12.
+    expect(r.at(2).player).toMatchObject({ carried: 12, capacity: 12 });
+    expect(r.at(2).motes_active).toBe(1);
+    expect(r.named('mote_picked').map((e) => e.data.carried)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  it('dawn-win: 3 lit lanterns at dawn win; score = sum(50 + floor(fuel)) + flames * 50; an out lantern does not count', () => {
+    const r = run.fixture('dawn-win', { ticks: 200 });
+    // L4 (1.5 = 90 units) goes out at tick 90. At tick 120: L1 3000-120 = 2880 -> 48, L2 1230-120 = 1110 -> 18,
+    // L3 6000-120 = 5880 -> 98. (50+48) + (50+18) + (50+98) = 314; 2 flames * 50 = 100. Total 414.
+    expect(rest(r)).toEqual([
+      [90, 'lantern_out', { lantern_id: 'L4' }],
+      [120, 'game_over', { result: 'won', reason: 'dawn_survived' }],
+    ]);
+    expect(r.end).toEqual({ type: 'end', ticks: 120, state: 'won', score: 414 });
+  });
+
+  it('dawn-lose: 2 lit lanterns of 5 at dawn (needs ceil(0.6 * 5) = 3) is lost with reason dawn, no bonus', () => {
+    const r = run.fixture('dawn-lose', { ticks: 200 });
+    expect(rest(r)).toEqual([[60, 'game_over', { result: 'lost', reason: 'dawn' }]]);
+    expect(r.end).toEqual({ type: 'end', ticks: 60, state: 'lost', score: 0 });
+  });
+
+  it('no-flames-on-dawn-tick: losing the last flame on the tick time reaches 0 is no_flames, even with 3 lanterns lit', () => {
+    const r = run.fixture('no-flames-on-dawn-tick', { ticks: 10 });
+    expect(rest(r)).toEqual([
+      [1, 'player_hit', { by: 'shade', flames: 0, dropped: 0 }],
+      [1, 'game_over', { result: 'lost', reason: 'no_flames' }],
+    ]);
+    expect(r.at(1)).toMatchObject({ state: 'lost', time_left_s: 0, score: 0 });
+  });
+
+  it('no-early-win: all 5 lanterns lit keeps the game going; fuel keeps falling 1 per second', () => {
+    const r = run.fixture('no-early-win', { ticks: 600 });
+    expect(r.named('game_over')).toEqual([]);
+    expect(r.end).toEqual({ type: 'end', ticks: 600, state: 'playing', score: 0 });
+    // 6000 - 600 = 5400 units = 90.0 each.
+    expect(r.at(600).lanterns.map((l: any) => l.fuel)).toEqual([90, 90, 90, 90, 90]);
   });
 });

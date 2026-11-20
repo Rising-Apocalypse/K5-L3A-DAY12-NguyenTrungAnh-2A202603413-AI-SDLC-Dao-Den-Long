@@ -76,3 +76,12 @@ export const CHARM_TICKS = 600;
 export const CHARM_RESPAWN_TICKS = 2700;
 /** Charm pickup needs |player.y - charm.y| <= this (XZ distance uses tuning.pickup_radius). */
 export const CHARM_PICKUP_MAX_DY = 1.5;
+
+// --- Phase 3 (Contract v1.2) ---------------------------------------------------------------------------------
+export const RELIGHT_SCORE = 40;
+export const DRAIN_STUN_BONUS = 10;
+export const DAWN_PER_LIT_LANTERN = 50;
+export const DRAIN_REACH = 2.0;
+export const DRAIN_BREAK_DIST = 6.0;
+export const FUEL_EVENT_EVERY = 60;
+

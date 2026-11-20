@@ -34,6 +34,14 @@ export interface Tuning {
   readonly dash_cooldown_s: number;
   readonly night2_duration_s: number;
   readonly night3_duration_s: number;
+  readonly fuel_max: number;
+  readonly fuel_decay_per_s: number;
+  readonly fuel_per_mote: number;
+  readonly relight_cost: number;
+  readonly win_ratio: number;
+  readonly drain_per_s: number;
+  readonly low_fuel_threshold: number;
+  readonly capacity_max: number;
   readonly score: ScoreTuning;
 }
 
@@ -43,6 +51,7 @@ const NUMBER_KEYS = [
   'flames', 'invuln_s', 'hit_drop_ratio', 'pulse_stun_s', 'pulse_push_m', 'pulse_cooldown_s',
   'safe_radius', 'shade_speed', 'shade_hit_radius',
   'dash_speed', 'dash_duration_s', 'dash_cooldown_s', 'night2_duration_s', 'night3_duration_s',
+  'fuel_max', 'fuel_decay_per_s', 'fuel_per_mote', 'relight_cost', 'win_ratio', 'drain_per_s', 'low_fuel_threshold', 'capacity_max',
 ] as const;
 
 const SCORE_KEYS = ['per_mote', 'per_lantern', 'per_stun', 'per_second_left', 'per_flame_left'] as const;

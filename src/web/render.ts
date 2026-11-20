@@ -28,6 +28,7 @@ import { SHADE_SPAWNING_TICKS } from '../core/rules';
 import { TICK_RATE } from '../core/sim';
 import { TUNING } from '../core/tuning';
 import type { GameEvent, GameState, ShadeState } from '../core/types';
+import { isColorBlind } from './colorblind';
 
 // Palette of Plan 01.
 const SKY = 0x0e1430;
@@ -43,6 +44,9 @@ const MOTE_CORE = 0xfff6c2;
 const MOTE_HALO = 0xffe58a;
 const SHADE_BODY = 0x120a1a;
 const SHADE_RIM = 0x7a3cff;
+const SHADE_RIM_CB = 0x00b3ff;
+const FUEL_BAR_LOW = 0xff5a5f;
+const FUEL_BAR_LOW_CB = 0xffffff;
 const SHADE_STUNNED = 0x3a3450;
 const MAY_ROBE = 0xe8e2d0;
 const MAY_SCARF = 0xc8102e;
@@ -53,6 +57,11 @@ const CAMERA_HEIGHT = 5;
 const MOTE_HOVER_Y = 0.5;
 const LAMP_Y = 3.4;
 const BEACH_WIDTH = 4;
+/** Fuel bar above a lit lantern: total width and height in metres. */
+const BAR_WIDTH = 2;
+const BAR_HEIGHT = 0.2;
+/** An unlit lantern is drawn this much lower than a lit one. */
+const UNLIT_SCALE_Y = 0.8;
 /** Light of the whole island: 0.15 with every lantern dark, +0.55 when all are lit. */
 const AMBIENT_BASE = 0.15;
 const AMBIENT_GAIN = 0.55;
@@ -66,6 +75,8 @@ interface LanternView {
   lamp: Mesh;
   light: PointLight;
   zone: Mesh;
+  bar: Group;
+  barFill: Mesh;
 }
 interface ShadeView {
   group: Group;
@@ -180,9 +191,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     zone.rotation.x = -Math.PI / 2;
     zone.position.y = 0.06;
     zone.visible = false;
-    group.add(post, lamp, light, zone);
+    // Fuel bar: a dark back plate and a fill whose left edge stays put while it shrinks; turned to face the camera.
+    const bar = new Group();
+    bar.position.y = LAMP_Y + 1.1;
+    const back = new Mesh(new PlaneGeometry(BAR_WIDTH + 0.12, BAR_HEIGHT + 0.12), new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6 }));
+    const fillGeometry = new PlaneGeometry(BAR_WIDTH, BAR_HEIGHT);
+    fillGeometry.translate(BAR_WIDTH / 2, 0, 0.01);
+    const barFill = new Mesh(fillGeometry, new MeshBasicMaterial({ color: LANTERN_LIT }));
+    barFill.position.x = -BAR_WIDTH / 2;
+    bar.add(back, barFill);
+    bar.visible = false;
+    group.add(post, lamp, light, zone, bar);
     scene.add(group);
-    view = { group, lamp, light, zone };
+    view = { group, lamp, light, zone, bar, barFill };
     lanternViews.set(id, view);
     return view;
   }
@@ -266,9 +287,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
           mat.emissive.setHex(LANTERN_LIT);
           mat.emissiveIntensity = 1.4 * (l.deposited / TUNING.lantern_cost);
         }
-        view.light.intensity = l.lit ? 220 : 0;
-        view.zone.visible = l.lit;
-        if (l.lit) (view.zone.material as MeshBasicMaterial).opacity = 0.55 + 0.15 * Math.sin(timeS * 2);
+        const lowFuel = l.lit && l.fuelUnits < TUNING.low_fuel_threshold * TICK_RATE;
+        const blinkOff = lowFuel && Math.floor(timeS * 2) % 2 === 1; // lantern and bar blink at 1 Hz
+        view.group.scale.y = l.lit ? 1 : UNLIT_SCALE_Y;
+        view.lamp.visible = !blinkOff;
+        view.light.intensity = l.lit && !blinkOff ? 220 : 0;
+        view.zone.visible = l.lit && !lowFuel; // the safe zone only exists while the fuel is not low
+        if (view.zone.visible) (view.zone.material as MeshBasicMaterial).opacity = 0.55 + 0.15 * Math.sin(timeS * 2);
+        view.bar.visible = l.lit && !blinkOff;
+        if (view.bar.visible) {
+          view.bar.quaternion.copy(camera.quaternion);
+          view.barFill.scale.x = Math.max(0.001, l.fuelUnits / (TUNING.fuel_max * TICK_RATE));
+          (view.barFill.material as MeshBasicMaterial).color.setHex(lowFuel ? (isColorBlind() ? FUEL_BAR_LOW_CB : FUEL_BAR_LOW) : LANTERN_LIT);
+        }
       }
 
       for (const m of state.motes) {
@@ -296,6 +327,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         const bodyMat = view.body.material as MeshStandardMaterial;
         bodyMat.color.setHex(stunned ? SHADE_STUNNED : SHADE_BODY);
         bodyMat.opacity = spawning ? 0.45 : 1;
+        (view.rim.material as MeshBasicMaterial).color.setHex(isColorBlind() ? SHADE_RIM_CB : SHADE_RIM);
         (view.rim.material as MeshBasicMaterial).opacity = spawning ? 0.3 : stunned ? 0.12 : s.state === 'recoil' ? 0.4 : 0.8;
         view.group.scale.setScalar(spawning ? 0.6 + 0.4 * (1 - s.spawnTicks / SHADE_SPAWNING_TICKS) : 1);
       }
