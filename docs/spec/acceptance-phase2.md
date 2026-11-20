@@ -20,7 +20,7 @@ Mỗi mục ghi test/fixture kiểm tra nó. Test nằm ở `tests/cli/nights.te
 | 2.10 | Đêm 3: tháp chuông bán kính 2 ở tâm tầng 2, không leo/xuyên được | `n3-tower`; `n3-pad` (không bao giờ vào tháp) |
 | 2.11 | Đêm 3: 7 đèn; 30 điểm sinh đom đóm (18 + 8 + 4 theo tầng); 16 điểm Bóng Mực r=43; Bùa C1, C2; xuất phát (0,0,−30) | `nights.test.ts` > `--night 3 tick-0 snapshot`; `levels.test.ts` |
 | 2.12 | Đêm 3: Bóng Mực mỗi 6 s (360 tick), tối đa 10, tốc độ 4.5 | `nights.test.ts` > shade schedules; `n3-shade-speed` |
-| 2.13 | Đêm 3: gió mạnh mỗi 30 s kéo dài 5 s, hướng ngẫu nhiên, đẩy 2 m/s, báo trước 2 s | `n3-wind` (bật / `wind_enabled: false` / Đêm 1–2 không có gió); phần báo trước bằng lá bay và âm thanh: kiểm tra tay — Plan 05 |
+| 2.13 | Đêm 3: gió mạnh mỗi 30 s kéo dài 5 s, hướng ngẫu nhiên, đẩy 2 m/s, báo trước 2 s | `n3-wind` (bật / `wind_enabled: false` / Đêm 1–2 không có gió); phần báo trước bằng lá bay và âm thanh: kiểm tra tay — mở `?seed=1`, Chọn Đêm 3, đợi tới giây 28 (tick 1680): thấy dòng "Gió mạnh sắp tới!", lá bay theo hướng gió và nghe tiếng gió vù; 2 giây sau gió thổi thật |
 | 2.14 | Bóng Mực Đêm 2–3 không đứng trên hư không | `n2-shade-void` |
 
 ## Phần 3 — Tính năng mới
@@ -38,4 +38,10 @@ Mỗi mục ghi test/fixture kiểm tra nó. Test nằm ở `tests/cli/nights.te
 | 3.9 | Scenario: `drifters[]` {pos, id?, state?, stolen?}, `random_drifters`, `wind_enabled`; id trùng → FormatError | `scenario-drifters.test.ts`; `scenario.test.ts` |
 | 3.10 | Thứ tự tick: Gió Lạc di chuyển sau Bóng Mực, cướp trước khi Bóng Mực gây hit, gió sau chuyển động của Mây | `n2-drifter-*` (tick chính xác tính tay) |
 | 3.11 | Một Đêm đầy đủ (≤ 21.600 tick) chạy headless ≤ 30 s và xác định (byte giống nhau) | `nights.test.ts` > determinism and speed; dòng Performance của `docs/proof/phase-2.md` |
-| 3.12 | Chuỗi 3 Đêm (menu → giới thiệu → chơi → kết quả), màn Bình Minh, tạm dừng với menu, cài đặt, âm thanh, HUD đầy đủ, bảng màu chuẩn, ≥ 30 FPS | kiểm tra tay — Plan 05 |
+| 3.12 | Chuỗi 3 Đêm: menu → giới thiệu → chơi → kết quả → Đêm kế; thắng Đêm 3 → màn Bình Minh với tổng điểm; thua → chơi lại Đêm đó | máy trạng thái: `tests/unit/web-flow.test.ts`; kiểm tra tay: Bắt đầu, đọc lời Ông Đăng, Enter, chơi (hoặc dùng "Chọn Đêm" để rút ngắn), xem màn kết quả và nút "Đêm kế" / "Chơi lại Đêm n" / "Về menu" |
+| 3.13 | Tạm dừng (Esc/P): logic dừng hoàn toàn; menu Tiếp tục / Chơi lại Đêm / Cài đặt / Về menu; nhạc giảm còn 30 % | lõi: `nights.test.ts` (pause); kiểm tra tay: bấm P giữa trận, đồng hồ đứng yên, phím khác không có tác dụng, thử từng nút |
+| 3.14 | Cài đặt: âm lượng, độ nhạy chuột, bảng màu; lưu giữa các lần mở | tải/lưu/ép khoảng: `tests/unit/web-settings.test.ts`; kiểm tra tay: đổi cài đặt, tải lại trang (F5), giá trị vẫn còn; kéo chuột xoay camera nhanh/chậm theo độ nhạy |
+| 3.15 | Âm thanh: nhạc nền đêm và hiệu ứng nhặt, thắp, tỏa sáng, bị đánh, nhảy, lướt, thắng, thua, Bóng Mực xuất hiện, đếm ngược 10 s cuối, báo gió | kiểm tra tay: bật loa, làm từng việc (âm chỉ phát sau cú bấm/phím đầu tiên của trình duyệt) |
+| 3.16 | HUD đầy đủ: ngọn lửa (trên trái), mm:ss (trên giữa, đỏ + nhấp nháy ≤ 30 s), đèn k/n và điểm (trên phải), thanh đom đóm 10–20 ô (dưới giữa), hồi chiêu Lướt/Toả sáng (dưới phải), nhắc "E — Nạp ánh sáng (x/10)", mũi tên tới đèn chưa sáng gần nhất khi ngoài màn hình | định dạng đồng hồ, sức chứa, đèn gần nhất, mũi tên mép màn hình, FPS: `tests/unit/web-hudlogic.test.ts`; kiểm tra tay: so với Ticket-02 trong trình duyệt |
+| 3.17 | Vẽ Đêm 2 và 3 đúng bản đồ, bảng màu Ticket-02, Gió Lạc, Bùa Gió, đèn tắt có vệt rách, ánh sáng môi trường tăng theo số đèn sáng; ≥ 30 FPS ở 1280×720 | kiểm tra tay: chơi từng Đêm, thêm `?fps=1` để xem FPS |
+| 3.18 | Sáng tạo "Đom đóm dẫn đường" (H) không đổi đầu ra headless | `night1-golden.test.ts`, `architecture.test.ts`; chọn đích và hồi chiêu: `tests/unit/web-guide.test.ts`; kiểm tra tay: bấm H ở Đêm 2 |

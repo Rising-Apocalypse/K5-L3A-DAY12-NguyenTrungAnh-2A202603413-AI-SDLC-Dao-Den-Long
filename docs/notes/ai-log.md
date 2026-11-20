@@ -226,3 +226,19 @@ Lãng phí: lần đổi hướng sai sang Phase 2 và lần dừng agent xhigh 
   - Bình minh Đêm 3: 5/7 đèn sáng → thắng, điểm 5×(50+99) + 3×50 = **895** ✓. Đêm 2: 3/6 đèn sáng → thua `dawn` ✓.
   - Chạy trọn Đêm 2 với seed 2: lúc nào cũng có tối đa 2 Gió Lạc, con đầu tiên xuất hiện ở tick 1200 ✓.
 - Kết luận: **chấp nhận Plan 04**.
+
+### 5. Plan 05 — web (Sonnet medium)
+- Phần đã làm:
+  - chuỗi màn hình menu → giới thiệu Đêm (có lời Ông Đăng) → chơi → kết quả → Bình Minh;
+  - menu tạm dừng; cài đặt được lưu (âm lượng, độ nhạy chuột, bảng màu);
+  - nhạc và hiệu ứng âm thanh tự tổng hợp bằng WebAudio;
+  - HUD đầy đủ, mũi tên chỉ đèn, `?fps=1`;
+  - vẽ đảo Đêm 2 và Đêm 3, Gió Lạc, bùa, lá bay khi có gió; ánh sáng môi trường = 0.15 + 0.55 × tỉ lệ đèn sáng; đèn tắt có vết rách;
+  - phần sáng tạo "Đom đóm dẫn đường" (phím H, chỉ đọc state, nằm trong `src/extras`).
+- Thêm 33 unit test cho các module thuần (luồng màn hình, cài đặt, logic HUD, đom đóm dẫn đường). Tổng **337/337**.
+- Opus review:
+  - `git diff` cho thấy không đụng `src/core`, `src/headless`, `tests/golden` hay test cũ;
+  - build OK;
+  - mở game trong trình duyệt và xem tận mắt: menu, Chọn Đêm, màn giới thiệu Đêm 1 (đúng lời thoại, đúng "4 phút · cần 3/5"), Đêm 2 (04:30, "0/6 · cần 4"), menu tạm dừng, Đêm 3 (05:00, "0/7 · cần 5", có tầng, dốc và tháp). Console không có lỗi.
+- **Chưa đo được FPS:** khung trình duyệt trong app vẽ bằng phần mềm (khoảng 3 FPS), nên không phản ánh máy thật. Cần đo bằng `?fps=1` trên Chrome của người dùng.
+- Chưa nghe thử âm thanh và chưa chơi trọn chuỗi 3 Đêm tới Bình Minh. Phần chuyển màn được unit test kiểm tra.

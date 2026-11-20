@@ -1,8 +1,8 @@
-import { xzDist } from '../core/geom';
 import { TICK_RATE } from '../core/sim';
 import type { Tuning } from '../core/tuning';
-import type { GameEvent, GameState } from '../core/types';
+import type { GameEvent, GameState, Vec3 } from '../core/types';
 import { isColorBlind } from './colorblind';
+import { blinkOn, carryCapacity, cooldownFraction, edgeArrow, formatClock, isClockDanger, lanternsNeeded, nearestUnlit, promptLantern, type EdgeArrow } from './hudlogic';
 
 const byId = (id: string): HTMLElement => {
   const el = document.getElementById(id);
@@ -10,63 +10,136 @@ const byId = (id: string): HTMLElement => {
   return el;
 };
 
-const REASON_TEXT = {
-  dawn_survived: ['Bình minh! Đảo đã sáng lại', 'Đủ đèn lồng còn sáng khi trời rạng.'],
-  dawn: ['Trời sáng mất rồi...', 'Hết đêm mà chưa đủ đèn còn sáng.'],
-  no_flames: ['Bóng Mực đã nuốt ánh sáng...', 'Mây đã hết ngọn lửa.'],
-} as const;
+/** Projects a world point to normalised screen coordinates (renderer.project). */
+export type Projector = (pos: Vec3, out: { x: number; y: number; behind: boolean }) => void;
 
-/** DOM overlay: time, lanterns, flames, carried, pulse cooldown, score, the "E" prompt, a hit flash and the end banner. */
+export interface HudExtras {
+  /** Real time in seconds (blink clock). */
+  timeS: number;
+  /** "Đom đóm dẫn đường" cooldown: 0 ready .. 1 just used. */
+  guideCooldown: number;
+  project: Projector;
+}
+
+/** Writes to the DOM only when the value changed. */
+function cachedText(el: HTMLElement): (s: string) => void {
+  let last: string | null = null;
+  return (s) => {
+    if (s !== last) {
+      last = s;
+      el.textContent = s;
+    }
+  };
+}
+function cachedClass(el: HTMLElement, cls: string): (on: boolean) => void {
+  let last: boolean | null = null;
+  return (on) => {
+    if (on !== last) {
+      last = on;
+      el.classList.toggle(cls, on);
+    }
+  };
+}
+function cachedStyle(el: HTMLElement, prop: 'height' | 'display' | 'visibility'): (v: string) => void {
+  let last: string | null = null;
+  return (v) => {
+    if (v !== last) {
+      last = v;
+      el.style[prop] = v;
+    }
+  };
+}
+
+/** DOM overlay: flames, clock, lanterns, score, mote bar, cooldown icons, "E" prompt, off-screen arrow, wind warning, hit flash. */
 export function createHud(tuning: Tuning) {
-  const time = byId('hud-time');
-  const score = byId('hud-score');
-  const flames = byId('hud-flames');
-  const carried = byId('hud-carried');
-  const lanterns = byId('hud-lanterns');
-  const pulse = byId('hud-pulse');
+  const root = byId('hud');
+  const flamesEl = byId('hud-flames');
+  const clock = byId('hud-clock');
+  const lanternsEl = byId('hud-lanterns');
+  const scoreEl = byId('hud-score');
+  const nightEl = byId('hud-night');
+  const slotsEl = byId('hud-slots');
+  const capEl = byId('hud-cap');
   const prompt = byId('prompt');
+  const arrow = byId('arrow');
+  const windWarn = byId('wind-warn');
   const flash = byId('flash');
-  const banner = byId('banner');
-  const bannerText = byId('banner-text');
-  const bannerScore = byId('banner-score');
-  const bannerSub = byId('banner-sub');
 
-  const dash = document.createElement('div');
-  dash.className = 'item';
-  dash.id = 'hud-dash';
-  pulse.parentNode?.insertBefore(dash, pulse.nextSibling);
+  const flameIcons: HTMLElement[] = [];
+  for (let i = 0; i < tuning.flames; i++) {
+    const f = document.createElement('div');
+    f.className = 'flame';
+    flamesEl.appendChild(f);
+    flameIcons.push(f);
+  }
+  const slots: HTMLElement[] = [];
+  for (let i = 0; i < tuning.capacity_max; i++) {
+    const s = document.createElement('div');
+    s.className = 'slot';
+    slotsEl.appendChild(s);
+    slots.push(s);
+  }
+  const slotFull: Array<boolean | null> = slots.map(() => null);
+  const slotShown: Array<boolean | null> = slots.map(() => null);
 
-  const pauseBanner = document.createElement('div');
-  pauseBanner.id = 'pause-banner';
-  pauseBanner.style.cssText =
-    'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);color:var(--gold);padding:16px 28px;border-radius:12px;font-size:24px;font-weight:600;display:none;pointer-events:none;z-index:100;';
-  pauseBanner.textContent = 'Tạm dừng — P để tiếp tục';
-  document.body.appendChild(pauseBanner);
-
-  const cbLabel = document.createElement('div');
-  cbLabel.className = 'item';
-  cbLabel.id = 'hud-colorblind';
-  dash.parentNode?.insertBefore(cbLabel, dash.nextSibling);
-  const showColorBlind = (): void => {
-    set(cbLabel, 'Bảng màu dễ phân biệt [C]', isColorBlind() ? 'bật' : 'tắt');
+  const cd = (id: string) => {
+    const box = byId(id);
+    return { box, fill: box.querySelector('.fill') as HTMLElement };
   };
+  const dash = cd('cd-dash');
+  const pulse = cd('cd-pulse');
+  const guide = cd('cd-guide');
 
-  let reason: keyof typeof REASON_TEXT | null = null;
+  const setClock = cachedText(clock);
+  const setLanterns = cachedText(lanternsEl);
+  const setScore = cachedText(scoreEl);
+  const setCap = cachedText(capEl);
+  const setPrompt = cachedText(prompt);
+  const promptDisplay = cachedStyle(prompt, 'display');
+  const clockDanger = cachedClass(clock, 'danger');
+  const clockHide = cachedClass(clock, 'hide');
+  const flamesLow = cachedClass(flamesEl, 'low');
+  const lanternsBad = cachedClass(lanternsEl, 'bad');
+  const windDisplay = cachedStyle(windWarn, 'display');
+  const arrowDisplay = cachedStyle(arrow, 'display');
+  const dashFill = cachedStyle(dash.fill, 'height');
+  const pulseFill = cachedStyle(pulse.fill, 'height');
+  const guideFill = cachedStyle(guide.fill, 'height');
+  const dashReady = cachedClass(dash.box, 'ready');
+  const dashCharm = cachedClass(dash.box, 'charm');
+  const pulseReady = cachedClass(pulse.box, 'ready');
+  const pulseNoMotes = cachedClass(pulse.box, 'nomotes');
+  const guideReady = cachedClass(guide.box, 'ready');
+  const flameOff = flameIcons.map((f) => cachedClass(f, 'off'));
 
-  const set = (el: HTMLElement, label: string, value: string) => {
-    el.innerHTML = `${label}: <b>${value}</b>`;
-  };
+  const proj = { x: 0, y: 0, behind: false };
+  const edge: EdgeArrow = { visible: false, x: 0, y: 0, rotDeg: 0 };
+  let lastCapacity = -1;
+  let colorBlind = isColorBlind();
+  let lastArrowX = NaN;
+  let lastArrowY = NaN;
+  let lastArrowRot = NaN;
 
-  const warn = (text: string): string => (isColorBlind() ? `⚠ ${text}` : text);
-
-  showColorBlind();
   return {
-    /** The colour-blind palette was toggled (key C). */
-    setColorBlind(): void {
-      showColorBlind();
+    show(on: boolean): void {
+      root.classList.toggle('on', on);
+      if (!on) {
+        promptDisplay('none');
+        arrowDisplay('none');
+        windDisplay('none');
+      }
     },
 
-    /** Feed the events of a step: a hit flashes the screen red, game_over remembers why the night ended. */
+    setNight(night: number, islandName: string): void {
+      nightEl.textContent = `Đêm ${night} — ${islandName}`;
+    },
+
+    /** The colour-blind palette was toggled (key C or settings). */
+    setColorBlind(): void {
+      colorBlind = isColorBlind();
+    },
+
+    /** A hit flashes the screen red. */
     onEvents(events: readonly GameEvent[]): void {
       for (const e of events) {
         if (e.name === 'player_hit') {
@@ -74,86 +147,104 @@ export function createHud(tuning: Tuning) {
           void flash.offsetWidth; // restart the CSS transition
           flash.classList.add('on');
           requestAnimationFrame(() => flash.classList.remove('on'));
-        } else if (e.name === 'game_over') {
-          reason = e.data.reason;
         }
       }
     },
 
     /** Forget the previous night (called on restart). */
     reset(): void {
-      reason = null;
       flash.classList.remove('on');
-      pauseBanner.style.display = 'none';
+      lastCapacity = -1;
     },
 
-    update(state: GameState): void {
+    update(state: GameState, ex: HudExtras): void {
       const p = state.player;
-      const secs = Math.max(0, Math.ceil(state.timeLeftS));
-      set(time, 'Thời gian', `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
-      const needed = Math.ceil(tuning.win_ratio * state.lanterns.length);
-      set(lanterns, 'Đèn lồng', `${state.lanterns.filter((l) => l.lit).length}/${state.lanterns.length}, cần ${needed}`);
-      set(flames, 'Ngọn lửa', `${'●'.repeat(Math.max(0, p.flames))}${p.flames <= 0 ? '0' : ''}`);
-      flames.classList.toggle('bad', p.flames <= 1);
-      if (p.flames <= 1) flames.innerHTML = warn(flames.innerHTML);
-      const capacity = Math.min(tuning.capacity_max, tuning.carry_capacity + 2 * p.successfulLights);
-      set(carried, 'Ánh sáng mang theo', `${p.carried}/${capacity}`);
-      set(score, 'Điểm', String(state.score));
 
-      const cooling = p.pulseCooldownTicks > 0;
-      const canPulse = !cooling && p.carried >= tuning.pulse_cost;
-      set(
-        pulse,
-        'Toả sáng [F]',
-        cooling ? `hồi ${(p.pulseCooldownTicks / TICK_RATE).toFixed(1)}s` : canPulse ? 'sẵn sàng' : `cần ${tuning.pulse_cost} ánh sáng`,
-      );
-      pulse.classList.toggle('dim', !canPulse);
+      for (let i = 0; i < flameIcons.length; i++) flameOff[i]!(i >= p.flames);
+      flamesLow(p.flames <= 1);
 
-      const dashCooling = p.dashCooldownTicks > 0;
-      set(
-        dash,
-        'Lướt',
-        dashCooling ? `${(p.dashCooldownTicks / TICK_RATE).toFixed(1)} s` : 'sẵn sàng',
-      );
-      dash.classList.toggle('dim', dashCooling);
+      const danger = isClockDanger(state.timeLeftS);
+      setClock(danger && colorBlind ? `⚠ ${formatClock(state.timeLeftS)}` : formatClock(state.timeLeftS));
+      clockDanger(danger);
+      clockHide(danger && state.state === 'playing' && !state.paused && !blinkOn(ex.timeS));
 
-      const isPaused = state.paused && state.state === 'playing';
-      pauseBanner.style.display = isPaused ? 'block' : 'none';
+      const total = state.lanterns.length;
+      let lit = 0;
+      for (const l of state.lanterns) if (l.lit) lit++;
+      setLanterns(`Đèn ${lit}/${total} · cần ${lanternsNeeded(tuning, total)}`);
+      setScore(`Điểm ${state.score}`);
 
-      // "E" prompt: nearest lantern within interact_radius that can take motes (unlit, or lit and below full).
-      let near: GameState['lanterns'][number] | null = null;
-      let best = Infinity;
-      for (const l of state.lanterns) {
-        const d = xzDist(p.pos, l.pos);
-        const full = l.lit && l.fuelUnits >= tuning.fuel_max * TICK_RATE;
-        if (!full && d <= tuning.interact_radius && d < best) {
-          near = l;
-          best = d;
+      // Mote bar: one slot per unit of capacity (10..20), filled = carried.
+      const capacity = carryCapacity(p, tuning);
+      if (capacity !== lastCapacity) {
+        lastCapacity = capacity;
+        for (let i = 0; i < slots.length; i++) {
+          const shown = i < capacity;
+          if (slotShown[i] !== shown) {
+            slotShown[i] = shown;
+            slots[i]!.style.display = shown ? '' : 'none';
+          }
         }
       }
-      if (state.state !== 'playing' || isPaused) {
-        prompt.style.display = 'none';
+      for (let i = 0; i < capacity; i++) {
+        const full = i < p.carried;
+        if (slotFull[i] !== full) {
+          slotFull[i] = full;
+          slots[i]!.classList.toggle('full', full);
+        }
+      }
+      setCap(`${p.carried}/${capacity}`);
+
+      // Cooldown icons.
+      const charm = p.charmTicks > 0;
+      dashCharm(charm);
+      dashFill(`${charm ? 0 : cooldownFraction(p.dashCooldownTicks, tuning.dash_cooldown_s, TICK_RATE) * 100}%`);
+      dashReady(charm || p.dashCooldownTicks <= 0);
+      pulseFill(`${cooldownFraction(p.pulseCooldownTicks, tuning.pulse_cooldown_s, TICK_RATE) * 100}%`);
+      pulseReady(p.pulseCooldownTicks <= 0 && p.carried >= tuning.pulse_cost);
+      pulseNoMotes(p.pulseCooldownTicks <= 0 && p.carried < tuning.pulse_cost);
+      guideFill(`${ex.guideCooldown * 100}%`);
+      guideReady(ex.guideCooldown <= 0);
+
+      const playing = state.state === 'playing' && !state.paused;
+      windDisplay(playing && state.wind.warning ? 'block' : 'none');
+
+      // "E" prompt (nearest lantern within interact_radius that can take motes).
+      const near = playing ? promptLantern(state, tuning, TICK_RATE) : null;
+      if (!playing) {
+        promptDisplay('none');
       } else if (p.fallWaitTicks > 0) {
-        prompt.textContent = 'Mây rơi khỏi đảo...';
-        prompt.style.display = 'block';
+        setPrompt('Mây rơi khỏi đảo...');
+        promptDisplay('block');
       } else if (near) {
-        prompt.textContent = near.lit
-          ? `E — Châm dầu (${(near.fuelUnits / TICK_RATE).toFixed(0)}/${tuning.fuel_max})`
-          : `E — Nạp ánh sáng (${near.deposited}/${near.everLit ? tuning.relight_cost : tuning.lantern_cost})`;
-        prompt.style.display = 'block';
+        setPrompt(
+          near.lit
+            ? `E — Châm dầu (${(near.fuelUnits / TICK_RATE).toFixed(0)}/${tuning.fuel_max})`
+            : `E — Nạp ánh sáng (${near.deposited}/${near.everLit ? tuning.relight_cost : tuning.lantern_cost})`,
+        );
+        promptDisplay('block');
       } else {
-        prompt.style.display = 'none';
+        promptDisplay('none');
       }
 
-      const over = state.state !== 'playing';
-      banner.style.display = over ? 'flex' : 'none';
-      banner.classList.toggle('lost', state.state === 'lost');
-      if (over) {
-        pauseBanner.style.display = 'none';
-        const [title, sub] = REASON_TEXT[reason ?? (state.state === 'won' ? 'dawn_survived' : 'no_flames')];
-        bannerText.textContent = title;
-        bannerScore.textContent = `Điểm cuối: ${state.score}`;
-        bannerSub.textContent = sub;
+      // Arrow to the nearest unlit lantern when it is outside the view.
+      const target = playing ? nearestUnlit(state) : null;
+      if (target) {
+        ex.project(target.pos, proj);
+        edgeArrow(proj.x, proj.y, proj.behind, window.innerWidth, window.innerHeight, 50, edge);
+      } else {
+        edge.visible = false;
+      }
+      if (edge.visible) {
+        if (edge.x !== lastArrowX || edge.y !== lastArrowY || edge.rotDeg !== lastArrowRot) {
+          lastArrowX = edge.x;
+          lastArrowY = edge.y;
+          lastArrowRot = edge.rotDeg;
+          arrow.style.transform = `translate(${edge.x.toFixed(0)}px, ${edge.y.toFixed(0)}px) rotate(${edge.rotDeg.toFixed(0)}deg)`;
+        }
+        arrowDisplay('block');
+      } else {
+        arrowDisplay('none');
       }
     },
   };

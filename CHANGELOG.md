@@ -17,6 +17,16 @@ Lõi headless của Ticket-02 phần 2 và 3 (kế hoạch `docs/plans/04-phase2
 - `scripts/verify.mjs`: thêm các dòng Đêm 2–3 / bục nhảy / tầng / gió / Gió Lạc / Đêm 1 không đổi vào bảng proof phase-2, và dòng hiệu năng `--night 3 --ticks 21600` (≤ 30 s).
 - Tài liệu: `docs/spec/acceptance-phase2.md`, mục "Phase 2 hoàn thiện" trong `docs/notes/assumptions.md`.
 
+### Thêm (web, Plan 05)
+- Luồng màn hình `src/web/flow.ts` (máy trạng thái thuần): menu → giới thiệu Đêm (tên đảo, thời lượng, số đèn cần, lời Ông Đăng) → chơi → kết quả → Đêm kế tiếp; thắng Đêm 3 ra màn Bình Minh với tổng điểm (tổng các Đêm đã thắng trong lượt chơi, Đêm chơi lại chỉ tính một lần); thua thì "Chơi lại Đêm n" hoặc về menu; "Chọn Đêm" để luyện tập. DOM ở `src/web/screens.ts`.
+- Menu tạm dừng (P / Esc): Tiếp tục, Chơi lại Đêm, Cài đặt, Về menu; nhạc nền giảm còn 30 %, các phím khác bị bỏ qua khi đang dừng.
+- Cài đặt lưu lại (`src/web/settings.ts`, khoá `dao-den-long.settings.v1`): âm lượng 0–100, độ nhạy chuột 0.1–1.0 độ/px, bảng màu dễ phân biệt (phím `C` vẫn dùng được).
+- Âm thanh WebAudio tổng hợp (`src/web/audio.ts`): nhạc nền pad và arpeggio ngũ cung, hiệu ứng nhặt, thắp, châm dầu, toả sáng, bị đánh, nhảy, lướt, thắng, thua, Bóng Mực xuất hiện, đếm ngược 10 s cuối, báo gió, Gió Lạc cướp. Không file âm thanh.
+- HUD đầy đủ (`src/web/hud.ts`, logic thuần ở `hudlogic.ts`): ngọn lửa, đồng hồ mm:ss (đỏ và nhấp nháy 2 Hz khi ≤ 30 s), đèn k/n · cần m, điểm, thanh đom đóm 10–20 ô, biểu tượng hồi chiêu Lướt, Toả sáng và Đom đóm dẫn đường, nhắc "E", mũi tên tới đèn chưa sáng gần nhất khi ngoài màn hình, cảnh báo gió; `?fps=1` hiện FPS.
+- Vẽ Đêm 2 và Đêm 3 (`src/web/render.ts`): đảo, cầu tre, bục nhảy phát sáng, ba tầng, hai dốc, tháp chuông; Bùa Gió, Gió Lạc (dải lụa, nhanh hơn khi đuổi, mờ khi bỏ chạy), lá bay theo hướng gió (báo trước 2 s và lúc gió thổi, tối đa 160 hạt); ánh sáng môi trường nội suy theo 0.15 + 0.55 × sáng/tổng; đèn tắt có vệt rách chéo trên giấy.
+- Sáng tạo: "Đom đóm dẫn đường" (phím `H`) ở `src/extras/guide.ts`, chỉ đọc `game.state`.
+- Bài test mới: `tests/unit/web-flow.test.ts`, `web-settings.test.ts`, `web-hudlogic.test.ts`, `web-guide.test.ts`.
+
 ### Tests updated (phase-2 hoàn thiện)
 - `tests/cli/cli.test.ts` — `exit 1 (not 0, not 2): missing required flags, unknown flag, bad values`: dòng `--night 2` bị từ chối đổi thành `--night 4` (Đêm 2 và 3 nay hợp lệ; chỉ 0, 4, `abc`… bị từ chối); plan 04 §0.2.
 - `tests/helpers/cli.ts` (helper, không phải test): thêm tuỳ chọn `night` (mặc định theo tiền tố fixture `n2-`/`n3-`) và hàm `cli()`.

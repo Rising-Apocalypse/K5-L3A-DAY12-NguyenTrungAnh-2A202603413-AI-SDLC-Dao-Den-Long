@@ -32,9 +32,14 @@ Cần Node.js 20 trở lên (đã thử trên Node 24). Có thể chọn seed: `
 | Shift | Lướt (dash) |
 | E | Tương tác (nạp ánh sáng vào đèn lồng) |
 | F | Toả sáng (pulse) |
-| P / Esc | Tạm dừng |
-| `[` `]` hoặc kéo chuột | Xoay camera |
-| R | Chơi lại |
+| H | Đom đóm dẫn đường (sáng tạo của tôi, hồi 10 s) |
+| P / Esc | Tạm dừng (menu: Tiếp tục / Chơi lại Đêm / Cài đặt / Về menu); Esc cũng đóng màn Cài đặt |
+| `[` `]` hoặc kéo chuột | Xoay camera (độ nhạy chuột chỉnh trong Cài đặt) |
+| C | Bảng màu dễ phân biệt (cũng có trong Cài đặt) |
+| R | Chơi lại Đêm đang chơi |
+
+Menu chính: Bắt đầu (Đêm 1 → 2 → 3 → màn Bình Minh với tổng điểm), Chọn Đêm (luyện tập), Cài đặt (âm lượng, độ nhạy chuột, bảng màu; lưu lại trong `localStorage`, khoá `dao-den-long.settings.v1`).
+Thêm `?fps=1` vào địa chỉ để hiện bộ đếm FPS (trung bình 2 giây gần nhất).
 
 (Plan gốc ghi Q/E để xoay camera, nhưng E đã dùng cho tương tác nên camera dùng `[` `]` và kéo chuột.)
 
@@ -42,7 +47,7 @@ Cần Node.js 20 trở lên (đã thử trên Node 24). Có thể chọn seed: `
 
 Phase 2 triển khai lõi headless của Contract v1.1 cho Đêm 1: lướt (dash), tạm dừng (pause), Bùa Gió (wind charm), sự kiện `night_start`, sự kiện rơi đổi sang `lost`, và định dạng snapshot v1.1.
 Hoàn thiện phase 2 (lõi headless): `--night 1|2|3` với ba hòn đảo — Đêm 1 Đảo Bến, Đêm 2 Đảo Cau (hai đảo nối bằng cầu tre, hai bục nhảy), Đêm 3 Đảo Chuông (ba tầng, dốc, bục nhảy, tháp chuông, gió mạnh) — cùng Gió Lạc (drifters), Bóng Mực theo từng Đêm. Chi tiết: `CHANGELOG.md`, `docs/spec/acceptance-phase2.md`.
-Chưa làm (phần web, Plan 05): menu chọn Đêm/giới thiệu/cài đặt/âm thanh/HUD đầy đủ và vẽ Đêm 2–3 (bản web hiện vẫn chỉ chơi Đêm 1). Chế độ bảng màu dễ phân biệt (phím `C`) đã xong từ phase 3.
+Phần web (Plan 05): luồng 3 Đêm có lời Ông Đăng, menu tạm dừng, cài đặt lưu lại, nhạc nền và hiệu ứng âm thanh tổng hợp bằng WebAudio, HUD đầy đủ, vẽ Đêm 2–3 (hai đảo và cầu tre, ba tầng, dốc, tháp chuông, Gió Lạc, Bùa Gió, lá gió). Còn lại: chưa có gì trong phạm vi Phase 2; mọi mục web chỉ kiểm tra tay (xem `docs/spec/acceptance-phase2.md` mục 3.12).
 
 ## Chế độ headless
 
@@ -106,8 +111,12 @@ Chi tiết từng con số và các hằng số của bản đồ nằm ở `doc
 
 ## Sáng tạo của tôi
 
-(Chưa có — sẽ bổ sung ở phase sau, kèm bằng chứng ngắn rằng phần lõi vẫn chạy đúng. Mọi phần mở rộng chỉ chạy
-trên web, không được làm đổi đầu ra headless.)
+**Đom đóm dẫn đường** (phím `H`, chỉ có trên web).
+
+- Là gì: bấm `H`, trong 3 giây một dải khoảng 12 đom đóm nhỏ bay từ Mây về phía đèn lồng cần giúp gần nhất (chưa sáng, hoặc đang sáng nhưng nhiên liệu dưới 30; không đèn nào cần thì chỉ về đèn sáng gần nhất). Dải dài tối đa 30 m để còn rõ hướng đi. Hồi 10 giây tính từ lúc bấm, biểu tượng `H` ở góc dưới phải HUD hiện thời gian hồi.
+- Vì sao: Đêm 2 (hai đảo) và Đêm 3 (ba tầng, tháp chuông che tầm nhìn) rộng, người chơi dễ lạc; mũi tên mép màn hình chỉ hướng đèn chưa sáng, còn đom đóm chỉ cả đèn sắp hết dầu và đi theo địa hình.
+- Bằng chứng lõi không đổi: tính năng chỉ ĐỌC `game.state` (`src/extras/guide.ts`, `src/web/render.ts`), không ghi gì vào lõi và không đi qua `step()`; `src/extras` không bao giờ được CLI headless nạp. `tests/guards/night1-golden.test.ts` vẫn so khớp từng byte 5 lần chạy Đêm 1 với `tests/golden/`, và `tests/guards/architecture.test.ts` chặn mọi import ngược từ `src/core` và `src/headless` vào `web`/`extras`. Phần chọn đích và vòng hồi có test ở `tests/unit/web-guide.test.ts`.
+- Cách thử: `npm run play`, chọn Đêm 2 hoặc 3 trong "Chọn Đêm", bấm `H`.
 
 ## Cấu trúc dự án
 

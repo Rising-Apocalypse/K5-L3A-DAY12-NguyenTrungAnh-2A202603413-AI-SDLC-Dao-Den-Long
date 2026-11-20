@@ -159,3 +159,17 @@ Không khoá nào là `null`: game dùng đủ mọi khái niệm của contract
 - **Luồng ngẫu nhiên mới:** `drifters` (điểm sinh, điểm lượn) và `wind` (hướng); các luồng cũ không bị đổi.
 - **Fixture n2-/n3-:** `scripts/verify.mjs` và helper test chạy fixture có tiền tố `n2-` / `n3-` với `--night 2|3`.
 - **Cạnh số học ở ngưỡng:** ngưỡng `y < −10` của cú rơi tự do nằm đúng ở giá trị −10 (sau 60 tick), nên phép cộng số thực có thể làm cú rơi báo sớm 1 tick (tick 65 thay vì 66); test chấp nhận cả hai.
+
+## Phase 2 hoàn thiện — phần web (Plan 05)
+
+- **Lời Ông Đăng** ở màn giới thiệu Đêm: ba câu cố định theo Plan 05 §1 (không có trong Ticket-02), `src/web/story.ts`.
+- **Tổng điểm:** tổng điểm cuối của các Đêm THẮNG trong một lượt chơi; chơi lại một Đêm đã thắng chỉ tính một lần (lần thắng gần nhất). Bắt đầu mới hoặc Chọn Đêm xoá tổng. Thắng Đêm 3 vào thẳng màn Bình Minh (không qua màn kết quả).
+- **Số đèn cần thắp** ở màn giới thiệu và HUD: `ceil(win_ratio × số đèn)` = 3 / 4 / 5.
+- **Thua rồi "Chơi lại Đêm n"** vào thẳng trận (bỏ qua giới thiệu); phím R làm như vậy trong lúc chơi.
+- **Tiếp tục** từ menu tạm dừng gửi một lần `pause: true` (cạnh lên) cho lõi, giống phím P.
+- **Cài đặt** lưu một khoá JSON `dao-den-long.settings.v1` (thay khoá cũ `dao-den-long:colorblind`, không đọc lại khoá cũ); giá trị sai bị ép về khoảng hợp lệ, JSON hỏng thì dùng mặc định.
+- **Âm thanh:** chỉ bắt đầu sau cú bấm hoặc phím đầu tiên (luật tự phát của trình duyệt); nhảy phát hiện ở web khi `grounded` đổi true → false với `vel.y > 0` (bục nhảy cũng phát tiếng này); tiếng đếm ngược mỗi giây khi còn 10 s trở xuống.
+- **Đom đóm dẫn đường:** hồi chiêu 10 s tính từ lúc bấm (kể cả 3 s hiệu ứng); dải dài tối đa 30 m; "cần giúp" là đèn chưa sáng hoặc nhiên liệu < `low_fuel_threshold` (30); đo khoảng cách trên mặt phẳng XZ. Tạm dừng thì đồng hồ của tính năng đứng yên.
+- **Mũi tên mép màn hình:** hiện khi đèn chưa sáng gần nhất (XZ) nằm ngoài khung nhìn hoặc sau camera; chiếu điểm cao bằng đèn lồng.
+- **Lá gió:** tối đa 160 hạt (một nửa lúc báo trước), vị trí là hàm của thời gian thực của web, không dùng ngẫu nhiên của lõi.
+
