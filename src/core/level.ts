@@ -58,5 +58,5 @@ export function buildMotes(seed: number): MoteState[] {
     const j = rng.int(0, i);
     [points[i], points[j]] = [points[j]!, points[i]!];
   }
-  return points.slice(0, DEFAULT_MOTE_COUNT).map((pos, i) => ({ id: `M${i + 1}`, pos, active: true }));
+  return points.slice(0, DEFAULT_MOTE_COUNT).map((pos, i) => ({ id: `M${i + 1}`, pos, active: true, kind: 'random' }));
 }

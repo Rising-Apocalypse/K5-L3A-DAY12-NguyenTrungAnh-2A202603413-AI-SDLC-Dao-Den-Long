@@ -67,3 +67,12 @@ export const FALL_WAIT_TICKS = 60;
 
 /** Two XZ points closer than this count as the same point (direction falls back to +X). */
 export const COINCIDENT_EPS = 1e-9;
+
+// --- Phase 2 (Contract v1.1) ---------------------------------------------------------------------------------
+/** Run speed while the wind charm is active. */
+export const CHARM_RUN_SPEED = 7.2;
+/** Charm effect duration, and the time until a picked charm is available again. */
+export const CHARM_TICKS = 600;
+export const CHARM_RESPAWN_TICKS = 2700;
+/** Charm pickup needs |player.y - charm.y| <= this (XZ distance uses tuning.pickup_radius). */
+export const CHARM_PICKUP_MAX_DY = 1.5;

@@ -2,7 +2,7 @@ import { FormatError } from './errors';
 import { BUTTONS, type Button, type Buttons, type InputState } from './types';
 
 export function defaultInput(): InputState {
-  return { move: [0, 0], camYawDeg: 0, jump: false, interact: false, pulse: false, dash: false };
+  return { move: [0, 0], camYawDeg: 0, jump: false, interact: false, pulse: false, dash: false, pause: false };
 }
 
 /**
@@ -26,9 +26,14 @@ export function worldMove(move: readonly [number, number], yawDeg: number): [num
 }
 
 /** Which buttons went false -> true between two ticks. */
-export function risingEdges(prev: Readonly<Buttons>, cur: Readonly<Buttons>): Buttons {
-  const edges = { jump: false, interact: false, pulse: false, dash: false };
-  for (const b of BUTTONS) edges[b] = !prev[b] && cur[b];
+export function risingEdges(prev: Readonly<Partial<Buttons>>, cur: Readonly<Partial<Buttons>>): Buttons {
+  const edges = { jump: false, interact: false, pulse: false, dash: false } as Buttons;
+  if ('pause' in prev || 'pause' in cur) edges.pause = false;
+  for (const b of BUTTONS) {
+    if (b in prev || b in cur) {
+      edges[b] = !prev[b] && Boolean(cur[b]);
+    }
+  }
   return edges;
 }
 

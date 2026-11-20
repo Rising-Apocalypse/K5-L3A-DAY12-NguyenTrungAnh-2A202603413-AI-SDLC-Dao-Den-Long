@@ -27,7 +27,26 @@ const held = new Set<string>();
 const latched = new Set<string>(); // pressed since the last simulated step, so a quick tap is never lost
 let camYawDeg = 0;
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyE', 'KeyF', 'KeyR', 'BracketLeft', 'BracketRight']);
+const GAME_KEYS = new Set([
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Space',
+  'KeyE',
+  'KeyF',
+  'KeyR',
+  'BracketLeft',
+  'BracketRight',
+  'ShiftLeft',
+  'ShiftRight',
+  'KeyP',
+  'Escape',
+]);
 
 window.addEventListener('keydown', (e) => {
   if (!GAME_KEYS.has(e.code)) return;
@@ -66,6 +85,8 @@ function buildInput(): InputState {
     jump: down('Space'),
     interact: down('KeyE'),
     pulse: down('KeyF'),
+    dash: down('ShiftLeft', 'ShiftRight'),
+    pause: down('KeyP', 'Escape'),
   };
 }
 

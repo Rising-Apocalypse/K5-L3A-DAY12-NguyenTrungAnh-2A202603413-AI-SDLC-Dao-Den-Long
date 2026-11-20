@@ -1,15 +1,27 @@
 import { FormatError } from './errors';
-import type { Vec3 } from './types';
+import type { ShadeStateName, Vec3 } from './types';
 
-/** A validated scenario file (Test Contract section D). Every field is optional: absent = game default. */
+/** A validated scenario file (Test Contract section D and Contract v1.1). Every field is optional: absent = game default. */
 export interface Scenario {
-  player?: { pos?: Vec3; carried?: number; flames?: number };
+  player?: {
+    pos?: Vec3;
+    carried?: number;
+    flames?: number;
+    invulnTicks?: number;
+    dashCdTicks?: number;
+    pulseCdTicks?: number;
+    charmTicks?: number;
+  };
   randomMotes?: boolean;
   randomShades?: boolean;
   motes?: Vec3[];
-  shades?: { pos: Vec3; id?: string }[];
+  shades?: { pos: Vec3; id?: string; state?: ShadeStateName; stateTicksLeft?: number }[];
   lanterns?: { id: string; pos?: Vec3; lit?: boolean; deposited?: number }[];
   timeLeftS?: number;
+  charms?: { id: string; pos: Vec3; available: boolean; respawnTicks: number }[];
+  drifters?: { pos: Vec3 }[];
+  randomDrifters?: boolean;
+  windEnabled?: boolean;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -40,6 +52,8 @@ function list(v: unknown, where: string): unknown[] {
   return v;
 }
 
+const VALID_SHADE_STATES = new Set(['spawning', 'wander', 'chase', 'recoil', 'stunned']);
+
 /** Validate a parsed scenario JSON document. Throws FormatError. Unknown keys are ignored. */
 export function parseScenario(json: unknown): Scenario {
   if (!isRecord(json)) throw new FormatError('scenario: top level must be an object');
@@ -52,6 +66,10 @@ export function parseScenario(json: unknown): Scenario {
     if (p.pos !== undefined) out.player.pos = vec3(p.pos, 'player.pos');
     if (p.carried !== undefined) out.player.carried = count(p.carried, 'player.carried');
     if (p.flames !== undefined) out.player.flames = count(p.flames, 'player.flames');
+    if (p.invuln_ticks !== undefined) out.player.invulnTicks = count(p.invuln_ticks, 'player.invuln_ticks');
+    if (p.dash_cd_ticks !== undefined) out.player.dashCdTicks = count(p.dash_cd_ticks, 'player.dash_cd_ticks');
+    if (p.pulse_cd_ticks !== undefined) out.player.pulseCdTicks = count(p.pulse_cd_ticks, 'player.pulse_cd_ticks');
+    if (p.charm_ticks !== undefined) out.player.charmTicks = count(p.charm_ticks, 'player.charm_ticks');
   }
 
   if (json.random_motes !== undefined) out.randomMotes = bool(json.random_motes, 'random_motes');
@@ -65,7 +83,7 @@ export function parseScenario(json: unknown): Scenario {
     const seen = new Set<string>();
     out.shades = list(json.shades, 'shades').map((s, i) => {
       if (!isRecord(s)) throw new FormatError(`scenario: shades[${i}] must be an object`);
-      const shade: { pos: Vec3; id?: string } = { pos: vec3(s.pos, `shades[${i}].pos`) };
+      const shade: { pos: Vec3; id?: string; state?: ShadeStateName; stateTicksLeft?: number } = { pos: vec3(s.pos, `shades[${i}].pos`) };
       if (s.id !== undefined) {
         if (typeof s.id !== 'string' || s.id === '') {
           throw new FormatError(`scenario: shades[${i}].id must be a non-empty string`);
@@ -73,6 +91,15 @@ export function parseScenario(json: unknown): Scenario {
         if (seen.has(s.id)) throw new FormatError(`scenario: shades[${i}].id "${s.id}" is used twice`);
         seen.add(s.id);
         shade.id = s.id;
+      }
+      if (s.state !== undefined) {
+        if (typeof s.state !== 'string' || !VALID_SHADE_STATES.has(s.state)) {
+          throw new FormatError(`scenario: shades[${i}].state must be one of spawning|wander|chase|recoil|stunned`);
+        }
+        shade.state = s.state as ShadeStateName;
+      }
+      if (s.state_ticks_left !== undefined) {
+        shade.stateTicksLeft = count(s.state_ticks_left, `shades[${i}].state_ticks_left`);
       }
       return shade;
     });
@@ -100,6 +127,32 @@ export function parseScenario(json: unknown): Scenario {
     }
     out.timeLeftS = t;
   }
+
+  if (json.charms !== undefined) {
+    const seen = new Set<string>();
+    out.charms = list(json.charms, 'charms').map((c, i) => {
+      if (!isRecord(c)) throw new FormatError(`scenario: charms[${i}] must be an object`);
+      if (typeof c.id !== 'string' || c.id === '') {
+        throw new FormatError(`scenario: charms[${i}].id must be a non-empty string`);
+      }
+      if (seen.has(c.id)) throw new FormatError(`scenario: charms[${i}].id "${c.id}" is used twice`);
+      seen.add(c.id);
+      const pos = vec3(c.pos, `charms[${i}].pos`);
+      const available = c.available !== undefined ? bool(c.available, `charms[${i}].available`) : true;
+      const respawnTicks = c.respawn_ticks !== undefined ? count(c.respawn_ticks, `charms[${i}].respawn_ticks`) : 0;
+      return { id: c.id, pos, available, respawnTicks };
+    });
+  }
+
+  if (json.drifters !== undefined) {
+    out.drifters = list(json.drifters, 'drifters').map((d, i) => {
+      if (!isRecord(d)) throw new FormatError(`scenario: drifters[${i}] must be an object`);
+      return { pos: vec3(d.pos, `drifters[${i}].pos`) };
+    });
+  }
+
+  if (json.random_drifters !== undefined) out.randomDrifters = bool(json.random_drifters, 'random_drifters');
+  if (json.wind_enabled !== undefined) out.windEnabled = bool(json.wind_enabled, 'wind_enabled');
 
   return out;
 }

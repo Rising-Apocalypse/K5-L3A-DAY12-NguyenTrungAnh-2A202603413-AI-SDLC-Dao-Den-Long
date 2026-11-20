@@ -16,6 +16,10 @@ import {
 import { Rng } from './rng';
 import { round3 } from './round';
 import {
+  CHARM_PICKUP_MAX_DY,
+  CHARM_RESPAWN_TICKS,
+  CHARM_RUN_SPEED,
+  CHARM_TICKS,
   DROP_RING_MAX,
   DROP_RING_MIN,
   DROP_TTL,
@@ -110,7 +114,7 @@ function newShade(id: string, pos: Vec3, state: ShadeStateName): ShadeState {
 }
 
 /** Listed shades keep their `id`; the rest get the lowest unused S<n>, in listed order. */
-function assignShades(listed: NonNullable<Scenario['shades']>): ShadeState[] {
+function assignShades(listed: NonNullable<Scenario['shades']>, playerPos: Vec3): ShadeState[] {
   const used = new Set(listed.flatMap((s) => (s.id !== undefined ? [s.id] : [])));
   let n = 1;
   return listed.map((s) => {
@@ -120,8 +124,18 @@ function assignShades(listed: NonNullable<Scenario['shades']>): ShadeState[] {
       id = `S${n}`;
       used.add(id);
     }
-    // Listed shades start in their normal active state (not `spawning`); the given position is used verbatim.
-    return newShade(id, copy(s.pos), 'wander');
+    const stateName = s.state ?? 'wander';
+    const shade = newShade(id, copy(s.pos), stateName);
+    if (stateName === 'spawning') {
+      if (s.stateTicksLeft !== undefined) shade.spawnTicks = s.stateTicksLeft;
+    } else if (stateName === 'stunned') {
+      shade.stunTicks = s.stateTicksLeft ?? 0;
+    } else if (stateName === 'recoil') {
+      shade.forcedTicks = s.stateTicksLeft ?? 0;
+      const [ux, uz] = unitXZ(playerPos, shade.pos);
+      shade.forcedStep = [(ux * RECOIL_DIST) / RECOIL_TICKS, (uz * RECOIL_DIST) / RECOIL_TICKS];
+    }
+    return shade;
   });
 }
 
@@ -136,9 +150,10 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState
   let shades: ShadeState[] = [];
 
   if (scenario.motes) {
-    motes = scenario.motes.map((pos, i) => ({ id: `M${i + 1}`, pos: copy(pos), active: true }));
+    motes = scenario.motes.map((pos, i) => ({ id: `M${i + 1}`, pos: copy(pos), active: true, kind: 'random' }));
   }
-  if (scenario.shades) shades = assignShades(scenario.shades);
+  const pos = copy(scenario.player?.pos ?? PLAYER_START);
+  if (scenario.shades) shades = assignShades(scenario.shades, pos);
 
   for (const patch of scenario.lanterns ?? []) {
     const lantern = lanterns.find((l) => l.id === patch.id);
@@ -152,10 +167,11 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState
     if (lantern.lit) for (const shade of shades) evictIfInside(shade, lantern, tuning);
   }
 
-  const pos = copy(scenario.player?.pos ?? PLAYER_START);
   return {
     tick: 0,
     simTick: 0,
+    night: 1,
+    paused: false,
     state: 'playing',
     timeLeftS: scenario.timeLeftS ?? tuning.night1_duration_s,
     score: 0,
@@ -166,14 +182,24 @@ function buildState(seed: number, scenario: Scenario, tuning: Tuning): GameState
       flames: scenario.player?.flames ?? tuning.flames,
       carried: scenario.player?.carried ?? 0,
       grounded: pos[1] <= 0 && isOverIsland(pos),
-      invulnTicks: 0,
-      pulseCooldownTicks: 0,
+      invulnTicks: scenario.player?.invulnTicks ?? 0,
+      pulseCooldownTicks: scenario.player?.pulseCdTicks ?? 0,
       fallWaitTicks: 0,
+      dashTicks: 0,
+      dashCooldownTicks: scenario.player?.dashCdTicks ?? 0,
+      dashDir: [0, 1],
+      charmTicks: scenario.player?.charmTicks ?? 0,
     },
     lanterns,
     shades,
     motes,
-    prevButtons: { jump: false, interact: false, pulse: false, dash: false },
+    charms: (scenario.charms ?? []).map((c) => ({
+      id: c.id,
+      pos: copy(c.pos),
+      available: c.available,
+      respawnTicks: c.available ? 0 : c.respawnTicks,
+    })),
+    prevButtons: { jump: false, interact: false, pulse: false, dash: false, pause: false },
     nextShadeNum: Math.max(0, ...shades.map((s) => idNumber(s.id, 'S'))) + 1,
     nextMoteNum: Math.max(0, ...motes.map((m) => idNumber(m.id, 'M'))) + 1,
   };
@@ -209,9 +235,11 @@ const ascending = (shades: readonly ShadeState[]): ShadeState[] => [...shades].s
 
 /** Stage 2: count every timer down by one tick. */
 function stageCounters(c: Step): void {
-  const { player: p, shades, motes } = c.state;
+  const { player: p, shades, motes, charms } = c.state;
   if (p.pulseCooldownTicks > 0) p.pulseCooldownTicks -= 1;
   if (p.invulnTicks > 0) p.invulnTicks -= 1;
+  if (p.dashCooldownTicks > 0) p.dashCooldownTicks -= 1;
+  if (p.charmTicks > 0) p.charmTicks -= 1;
   if (p.fallWaitTicks > 0) {
     p.fallWaitTicks -= 1;
     c.respawn = p.fallWaitTicks === 0;
@@ -224,6 +252,15 @@ function stageCounters(c: Step): void {
     if (m.active && m.ttl !== undefined) {
       m.ttl -= 1;
       if (m.ttl <= 0) m.active = false;
+    }
+  }
+  for (const ch of charms) {
+    if (!ch.available) {
+      ch.respawnTicks -= 1;
+      if (ch.respawnTicks <= 0) {
+        ch.respawnTicks = 0;
+        ch.available = true;
+      }
     }
   }
 }
@@ -244,15 +281,45 @@ function stageMovePlayer(c: Step): void {
     return;
   }
 
+  const [dx, dz] = worldMove(input.move, input.camYawDeg);
+  const moveLen = Math.hypot(dx, dz);
+
+  const canDash = p.charmTicks > 0 || p.dashCooldownTicks === 0;
+  if (c.edges.dash && p.dashTicks === 0 && canDash) {
+    const dir: [number, number] = moveLen > 0 ? [dx / moveLen, dz / moveLen] : [p.facing[0], p.facing[1]];
+    p.dashDir = dir;
+    p.dashTicks = toTicks(tuning.dash_duration_s);
+    p.dashCooldownTicks = toTicks(tuning.dash_cooldown_s);
+    c.events.push({ name: 'dash', data: {} });
+  }
+
+  if (p.dashTicks > 0) {
+    p.vel = [p.dashDir[0] * tuning.dash_speed, 0, p.dashDir[1] * tuning.dash_speed];
+    p.pos[0] += p.vel[0] * DT;
+    p.pos[2] += p.vel[2] * DT;
+    p.dashTicks -= 1;
+
+    if (p.grounded && !isOverIsland(p.pos)) p.grounded = false;
+
+    if (tuning.fall_enabled && p.pos[1] < FALL_Y) {
+      p.flames = Math.max(0, p.flames - 1);
+      const lost = p.carried;
+      p.carried = 0;
+      p.dashTicks = 0;
+      c.events.push({ name: 'player_hit', data: { by: 'fall', flames: p.flames, dropped: 0, lost } });
+      if (p.flames > 0) p.fallWaitTicks = FALL_WAIT_TICKS;
+    }
+    return;
+  }
+
   // Velocity is set instantly (full air control). There is no edge clamp: past ISLAND_RADIUS there is no
   // ground and the player simply keeps falling (unless falling is switched off, see below).
-  const [dx, dz] = worldMove(input.move, input.camYawDeg);
-  p.vel[0] = dx * tuning.player_speed;
-  p.vel[2] = dz * tuning.player_speed;
+  const speed = p.charmTicks > 0 ? CHARM_RUN_SPEED : tuning.player_speed;
+  p.vel[0] = dx * speed;
+  p.vel[2] = dz * speed;
   p.pos[0] += p.vel[0] * DT;
   p.pos[2] += p.vel[2] * DT;
-  const len = Math.hypot(dx, dz);
-  if (len > 0) p.facing = [dx / len, dz / len];
+  if (moveLen > 0) p.facing = [dx / moveLen, dz / moveLen];
 
   if (!tuning.fall_enabled) {
     // Without a fall penalty the island edge is a wall.
@@ -284,11 +351,12 @@ function stageMovePlayer(c: Step): void {
 
   if (tuning.fall_enabled && p.pos[1] < FALL_Y) {
     // Once per fall (Mây is frozen afterwards) and regardless of invulnerability: lose a flame and everything
-    // carried. In v1.0 the event's `dropped` reports the motes lost.
+    // carried. In v1.1 the event's `lost` reports the motes lost, dropped is 0.
     p.flames = Math.max(0, p.flames - 1);
     const lost = p.carried;
     p.carried = 0;
-    c.events.push({ name: 'player_hit', data: { by: 'fall', flames: p.flames, dropped: lost } });
+    p.dashTicks = 0;
+    c.events.push({ name: 'player_hit', data: { by: 'fall', flames: p.flames, dropped: 0, lost } });
     if (p.flames > 0) p.fallWaitTicks = FALL_WAIT_TICKS; // with no flame left the game ends in stage 11
   }
 }
@@ -298,13 +366,25 @@ function stagePickup(c: Step): void {
   const { state, tuning } = c;
   const p = state.player;
   if (p.fallWaitTicks > 0) return;
+
   for (const m of state.motes) {
-    if (p.carried >= tuning.carry_capacity) return;
+    if (p.carried >= tuning.carry_capacity) break;
     if (!m.active) continue;
     if (xzDist(p.pos, m.pos) > tuning.pickup_radius || Math.abs(p.pos[1] - m.pos[1]) > PICKUP_MAX_DY) continue;
     m.active = false;
     p.carried += 1;
     c.events.push({ name: 'mote_picked', data: { carried: p.carried } });
+  }
+
+  const sortedCharms = [...state.charms].sort((a, b) => compareIds(a.id, b.id));
+  for (const ch of sortedCharms) {
+    if (!ch.available) continue;
+    if (xzDist(p.pos, ch.pos) <= tuning.pickup_radius && Math.abs(p.pos[1] - ch.pos[1]) <= CHARM_PICKUP_MAX_DY) {
+      p.charmTicks = CHARM_TICKS;
+      ch.available = false;
+      ch.respawnTicks = CHARM_RESPAWN_TICKS;
+      c.events.push({ name: 'charm_picked', data: { charm_id: ch.id, charm_ticks: CHARM_TICKS } });
+    }
   }
 }
 
@@ -515,6 +595,7 @@ function stageHits(c: Step): void {
       pos: [p.pos[0] + radius * Math.cos(angle), 0, p.pos[2] + radius * Math.sin(angle)],
       active: true,
       ttl: DROP_TTL,
+      kind: 'dropped',
     });
   }
   p.invulnTicks = c.ticks.invuln;
@@ -534,7 +615,7 @@ function spawnMote(c: Step): void {
   const free = MOTE_SPAWN_POINTS.filter((pt) => !active.some((m) => xzDist(pt, m.pos) <= MOTE_SPAWN_CLEARANCE));
   if (free.length === 0) return;
   const pt = free[c.rngs.spawn.int(0, free.length - 1)]!;
-  state.motes.push({ id: `M${state.nextMoteNum++}`, pos: copy(pt), active: true });
+  state.motes.push({ id: `M${state.nextMoteNum++}`, pos: copy(pt), active: true, kind: 'random' });
 }
 
 /** Scheduled shades: each on a random spawn point far enough from Mây, outside every lit safe zone. */
@@ -605,7 +686,18 @@ export function createGame(options: CreateGameOptions): Game {
   function step(input: InputState): GameEvent[] {
     if (state.state !== 'playing') return [];
 
+    const edges = risingEdges(state.prevButtons, input);
+    const events: GameEvent[] = [];
+    if (state.tick === 0) events.push({ name: 'night_start', data: { night: state.night } });
     state.tick += 1;
+    if (edges.pause) {
+      state.paused = !state.paused;
+      events.push({ name: state.paused ? 'paused' : 'resumed', data: {} });
+    }
+    if (state.paused) {
+      state.prevButtons = { jump: input.jump, interact: input.interact, pulse: input.pulse, dash: input.dash, pause: input.pause };
+      return events;
+    }
     state.simTick += 1;
     state.timeLeftS = startTimeS - state.simTick / TICK_RATE;
 
@@ -614,8 +706,8 @@ export function createGame(options: CreateGameOptions): Game {
       state,
       tuning,
       input,
-      edges: risingEdges(state.prevButtons, input),
-      events: [],
+      edges,
+      events,
       ticks,
       rngs,
       randomMotes: scenario.randomMotes !== false,
@@ -634,7 +726,7 @@ export function createGame(options: CreateGameOptions): Game {
     stageSpawns(c);
     stageEnd(c);
 
-    state.prevButtons = { jump: input.jump, interact: input.interact, pulse: input.pulse, dash: input.dash };
+    state.prevButtons = { jump: input.jump, interact: input.interact, pulse: input.pulse, dash: input.dash, pause: input.pause };
     for (const extra of extras) extra.onStep?.(state, input, extrasRng);
     return c.events;
   }
@@ -646,14 +738,37 @@ export function createGame(options: CreateGameOptions): Game {
       type: 'snapshot',
       tick: state.tick,
       sim_tick: state.simTick,
-      state: state.state,
+      night: state.night,
+      state: state.paused ? 'paused' : state.state,
       time_left_s: round3(state.timeLeftS),
       score: state.score,
-      player: { pos: r3(state.player.pos), flames: state.player.flames, carried: state.player.carried },
+      wind: { active: false, dir_deg: 0 },
+      player: {
+        pos: r3(state.player.pos),
+        vel: r3(state.player.vel),
+        grounded: state.player.grounded,
+        flames: state.player.flames,
+        carried: state.player.carried,
+        invuln: state.player.invulnTicks > 0,
+        dash_cd_s: round3(state.player.dashCooldownTicks / TICK_RATE),
+        pulse_cd_s: round3(state.player.pulseCooldownTicks / TICK_RATE),
+        charm_s: round3(state.player.charmTicks / TICK_RATE),
+      },
       lanterns: state.lanterns.map((l) => ({ id: l.id, pos: r3(l.pos), lit: l.lit, deposited: l.deposited })),
       shades: state.shades.map((s) => ({ id: s.id, pos: r3(s.pos), state: s.state })),
       motes_active: activeMotes.length,
-      motes: activeMotes.map((m) => ({ id: m.id, pos: r3(m.pos) })),
+      motes: activeMotes.map((m) => ({
+        id: m.id,
+        pos: r3(m.pos),
+        kind: m.kind,
+        ttl_s: m.ttl !== undefined ? round3(m.ttl / TICK_RATE) : null,
+      })),
+      drifters: [],
+      charms: state.charms.map((c) => ({
+        id: c.id,
+        available: c.available,
+        respawn_s: round3(c.respawnTicks / TICK_RATE),
+      })),
     };
   }
 

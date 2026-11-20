@@ -30,6 +30,18 @@ export function createHud(tuning: Tuning) {
   const bannerScore = byId('banner-score');
   const bannerSub = byId('banner-sub');
 
+  const dash = document.createElement('div');
+  dash.className = 'item';
+  dash.id = 'hud-dash';
+  pulse.parentNode?.insertBefore(dash, pulse.nextSibling);
+
+  const pauseBanner = document.createElement('div');
+  pauseBanner.id = 'pause-banner';
+  pauseBanner.style.cssText =
+    'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--panel);color:var(--gold);padding:16px 28px;border-radius:12px;font-size:24px;font-weight:600;display:none;pointer-events:none;z-index:100;';
+  pauseBanner.textContent = 'Tạm dừng — P để tiếp tục';
+  document.body.appendChild(pauseBanner);
+
   let reason: keyof typeof REASON_TEXT | null = null;
 
   const set = (el: HTMLElement, label: string, value: string) => {
@@ -55,6 +67,7 @@ export function createHud(tuning: Tuning) {
     reset(): void {
       reason = null;
       flash.classList.remove('on');
+      pauseBanner.style.display = 'none';
     },
 
     update(state: GameState): void {
@@ -76,6 +89,17 @@ export function createHud(tuning: Tuning) {
       );
       pulse.classList.toggle('dim', !canPulse);
 
+      const dashCooling = p.dashCooldownTicks > 0;
+      set(
+        dash,
+        'Lướt',
+        dashCooling ? `${(p.dashCooldownTicks / TICK_RATE).toFixed(1)} s` : 'sẵn sàng',
+      );
+      dash.classList.toggle('dim', dashCooling);
+
+      const isPaused = state.paused && state.state === 'playing';
+      pauseBanner.style.display = isPaused ? 'block' : 'none';
+
       // "E" prompt: nearest unlit lantern within interact_radius, with how full it already is.
       let near: GameState['lanterns'][number] | null = null;
       let best = Infinity;
@@ -86,7 +110,7 @@ export function createHud(tuning: Tuning) {
           best = d;
         }
       }
-      if (state.state !== 'playing') {
+      if (state.state !== 'playing' || isPaused) {
         prompt.style.display = 'none';
       } else if (p.fallWaitTicks > 0) {
         prompt.textContent = 'Mây rơi khỏi đảo...';
@@ -102,6 +126,7 @@ export function createHud(tuning: Tuning) {
       banner.style.display = over ? 'flex' : 'none';
       banner.classList.toggle('lost', state.state === 'lost');
       if (over) {
+        pauseBanner.style.display = 'none';
         const [title, sub] = REASON_TEXT[reason ?? (state.state === 'won' ? 'all_lit' : 'no_flames')];
         bannerText.textContent = title;
         bannerScore.textContent = `Điểm cuối: ${state.score}`;

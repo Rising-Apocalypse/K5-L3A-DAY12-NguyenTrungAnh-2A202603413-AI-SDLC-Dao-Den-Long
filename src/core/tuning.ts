@@ -29,6 +29,11 @@ export interface Tuning {
   readonly shade_speed: number;
   readonly shade_hit_radius: number;
   readonly fall_enabled: boolean;
+  readonly dash_speed: number;
+  readonly dash_duration_s: number;
+  readonly dash_cooldown_s: number;
+  readonly night2_duration_s: number;
+  readonly night3_duration_s: number;
   readonly score: ScoreTuning;
 }
 
@@ -37,6 +42,7 @@ const NUMBER_KEYS = [
   'pickup_radius', 'interact_radius', 'pulse_cost', 'pulse_radius', 'night1_duration_s',
   'flames', 'invuln_s', 'hit_drop_ratio', 'pulse_stun_s', 'pulse_push_m', 'pulse_cooldown_s',
   'safe_radius', 'shade_speed', 'shade_hit_radius',
+  'dash_speed', 'dash_duration_s', 'dash_cooldown_s', 'night2_duration_s', 'night3_duration_s',
 ] as const;
 
 const SCORE_KEYS = ['per_mote', 'per_lantern', 'per_stun', 'per_second_left', 'per_flame_left'] as const;
